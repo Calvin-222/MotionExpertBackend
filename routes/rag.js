@@ -464,7 +464,6 @@ class MultiUserRAGSystem {
         console.error('Bucket check/create error:', bucketError.message);
         // 如果 bucket 已存在，繼續執行
       }
-
       const bucketFile = bucket.file(userBucketPath);
       await bucketFile.save(file, {
         metadata: {
