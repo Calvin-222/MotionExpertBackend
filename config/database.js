@@ -17,9 +17,6 @@ const pool = mysql.createPool({
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
-  acquireTimeout: 60000,
-  timeout: 60000,
-  reconnect: true
 });
 
 // Test connection
@@ -29,7 +26,7 @@ async function testConnection() {
     console.log('[DEBUG] Database connected successfully to demo database!');
     
     // Test users table
-    const [users] = await connection.execute('SELECT userid, username FROM users LIMIT 5');
+    const [users] = await connection.execute('SELECT userid, username FROM users LIMIT 1');
     console.log('[DEBUG] Sample users:', users);
     
     connection.release();
