@@ -3,9 +3,46 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
 const db = require("../config/database");
+const ratelimit = require('express-rate-limit')
+const validator = require('validator')  
+
+
+// Rate limiting middleware 
+const limiter = ratelimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 15, // Limit each IP to 15 requests per windowMs
+  message: 'Too many requests, please try again later.'
+})
+
+const validateInput = (req, res, next) => {
+  const { username, password } = req.body
+
+  // Validate username format
+  if (typeof username !== 'string' || !/^[a-zA-Z0-9_]+$/.test(username)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid username format'
+    })
+  }
+
+  // Check for dangerous patterns in username
+  const dangerousPatterns = [/<script/i, /javascript:/i, /vbscript:/i, /on\w+=/i, /<iframe/i]
+  if (dangerousPatterns.some(pattern => pattern.test(username))) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid characters in username'
+    })
+  }
+
+  // Sanitize inputs
+  req.body.username = validator.escape(username.trim())
+  req.body.password = password // Don't sanitize password, just validate length
+
+  next()
+}
 
 // Login route 修正
-router.post("/login", async (req, res) => {
+router.post('/login',limiter, validateInput, async (req, res) => {  //apply rate limiting and input validation to this route
   try {
     const { username, password } = req.body;
 
@@ -32,8 +69,8 @@ router.post("/login", async (req, res) => {
 
     const token = jwt.sign(
       { userId: user.userid, username: user.username },
-      process.env.JWT_SECRET || "fheisbwfiwghbtjdkwajedfegrjefujhub41354trhj",
-      { expiresIn: "24h" } // 修正：改為 24 小時
+      process.env.JWT_SECRET ,
+      { expiresIn: "24h" } // 
     );
 
     res.json({
@@ -52,7 +89,7 @@ router.post("/login", async (req, res) => {
 });
 
 // Registration route 修正
-router.post("/register", async (req, res) => {
+router.post('/register',limiter, validateInput, async (req, res) => {
   try {
     const { username, password, confirmPassword } = req.body;
 
@@ -108,7 +145,7 @@ router.post("/register", async (req, res) => {
     // Create JWT token for immediate login
     const token = jwt.sign(
       { userId: newUser[0].userid, username: username },
-      process.env.JWT_SECRET || "fheisbwfiwghbtjdkwajedfegrjefujhub41354trhj",
+      process.env.JWT_SECRET ,
       { expiresIn: "24h" } // 修正：改為 24 小時
     );
 
@@ -140,7 +177,7 @@ router.get("/me", async (req, res) => {
 
     const decoded = jwt.verify(
       token,
-      process.env.JWT_SECRET || "fheisbwfiwghbtjdkwajedfegrjefujhub41354trhj"
+      process.env.JWT_SECRET
     );
 
     const [users] = await db.execute(
