@@ -28,6 +28,7 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Enable CORS for all routes
+// Enable CORS for all routes
 app.use(cors());
 
 app.use('/', indexRouter);
