@@ -26,6 +26,8 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: false, limit: '50mb' }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
+
+// Enable CORS for all routes
 app.use(cors());
 
 app.use('/', indexRouter);
