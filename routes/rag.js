@@ -67,20 +67,25 @@ class MultiUserRAGSystem {
     return await apiCall();
   }
 
-  // 🏗️ 為用戶創建專屬的 RAG Engine（修正版 - 使用用戶ID作為Engine名稱）
-  async createUserRAGEngine(userId, displayName = null, fileName = null) {
+  // 🏗️ 為用戶創建專屬的 RAG Engine（支持多個 Engine）
+  async createUserRAGEngine(userId, engineName = null, description = null) {
     try {
       const authClient = await this.auth.getClient();
       const accessToken = await authClient.getAccessToken();
 
       const createUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/projects/${this.projectId}/locations/${this.location}/ragCorpora`;
 
-      // 使用用戶ID作為Engine名稱
-      const engineDisplayName = `${userId} Knowledge Base`;
+      // 支持用戶自定義 Engine 名稱，如果沒有提供則使用默認名稱
+      const engineDisplayName = engineName ? 
+        `${userId} - ${engineName}` : 
+        `${userId} Knowledge Base`;
+
+      const engineDescription = description || 
+        `RAG corpus for user ${userId} - Created ${new Date().toISOString()}`;
 
       const corpusData = {
         displayName: engineDisplayName,
-        description: `RAG corpus for user ${userId} - Created ${new Date().toISOString()}`,
+        description: engineDescription,
       };
 
       console.log(`Creating RAG Engine for user ${userId}...`);
@@ -262,6 +267,7 @@ class MultiUserRAGSystem {
               status: details.status,
               isUserEngine:
                 corpus.displayName?.includes("Knowledge Base") ||
+                corpus.displayName?.includes(" - ") ||  // 新格式：userId - engineName
                 corpus.description?.includes("user "),
               userId: this.extractUserIdFromEngine(corpus),
             };
@@ -304,20 +310,32 @@ class MultiUserRAGSystem {
 
   // 🔍 從 Engine 中提取用戶 ID（改进版 - 支持數據庫 UUID）
   extractUserIdFromEngine(corpus) {
+    // 嘗試從 displayName 中提取（新格式：userId - engineName）
+    if (corpus.displayName) {
+      // 匹配新格式 "userId - engineName"
+      const newFormatMatch = corpus.displayName.match(/^([a-f0-9\-]{36}) - (.+)$/);
+      if (newFormatMatch) {
+        return newFormatMatch[1]; // 返回 userId
+      }
+
+      // 匹配舊格式 "userId-engineName"
+      const oldFormatMatch = corpus.displayName.match(/^([a-f0-9\-]{36})-(.+)$/);
+      if (oldFormatMatch) {
+        return oldFormatMatch[1]; // 返回 userId
+      }
+
+      // 匹配 Knowledge Base 格式 "userId Knowledge Base"
+      const kbFormatMatch = corpus.displayName.match(/^([a-f0-9\-]{36}) Knowledge Base$/);
+      if (kbFormatMatch) {
+        return kbFormatMatch[1]; // 返回 userId
+      }
+    }
+
     // 嘗試從 description 中提取用戶 ID（UUID格式）
     if (corpus.description) {
       const match = corpus.description.match(/user ([a-f0-9\-]{36})/i);
       if (match) {
         return match[1];
-      }
-    }
-
-    // 嘗試從 displayName 中提取（如果有的話）
-    if (corpus.displayName) {
-      // 如果 displayName 包含 userid 前綴
-      const match = corpus.displayName.match(/^([a-f0-9\-]{36})-(.+)$/);
-      if (match) {
-        return match[1]; // 返回 userid
       }
     }
 
@@ -382,7 +400,9 @@ class MultiUserRAGSystem {
         const fileId = file.name.split("/").pop();
         return {
           id: fileId,
+          ragFileId: fileId,
           name: file.displayName || fileId,
+          displayName: file.displayName || fileId,
           fullName: file.name,
           createTime: file.createTime,
           updateTime: file.updateTime,
@@ -577,6 +597,63 @@ class MultiUserRAGSystem {
         success: false,
         error: error.message,
         stack: error.stack,
+      };
+    }
+  }
+
+  // 📤 上傳文件到指定的 RAG Engine
+  async uploadFileToEngine(corpusName, userId, fileBuffer, fileName) {
+    try {
+      console.log(`📤 Uploading file ${fileName} to engine ${corpusName} for user ${userId}`);
+
+      // 上傳文件到 Cloud Storage
+      const timestamp = Date.now();
+      const userBucketPath = `user-data/${userId}/${timestamp}-${fileName}`;
+      
+      const bucket = this.storage.bucket(this.bucketName);
+      
+      try {
+        const [bucketExists] = await bucket.exists();
+        if (!bucketExists) {
+          console.log(`Creating bucket: ${this.bucketName}`);
+          await this.storage.createBucket(this.bucketName, {
+            location: this.location,
+            storageClass: "STANDARD",
+          });
+        }
+      } catch (bucketError) {
+        console.error("Bucket check/create error:", bucketError.message);
+      }
+
+      const bucketFile = bucket.file(userBucketPath);
+      await bucketFile.save(fileBuffer, {
+        metadata: {
+          contentType: "text/plain",
+          metadata: {
+            userId: userId,
+            originalName: fileName,
+            uploadedAt: new Date().toISOString(),
+          },
+        },
+      });
+
+      console.log(`✅ File uploaded to Cloud Storage: gs://${this.bucketName}/${userBucketPath}`);
+
+      // 導入到 RAG Engine
+      console.log(`🔄 Importing file to RAG Engine: ${corpusName}`);
+      const importResult = await this.importFileToRAG(corpusName, userBucketPath);
+
+      return {
+        success: true,
+        fileName: fileName,
+        bucketPath: `gs://${this.bucketName}/${userBucketPath}`,
+        importResult: importResult,
+      };
+    } catch (error) {
+      console.error(`❌ Upload file to engine error:`, error);
+      return {
+        success: false,
+        error: error.message,
       };
     }
   }
@@ -1037,6 +1114,106 @@ router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
   }
 });
 
+// 🏗️ 創建新的 RAG Engine
+router.post("/users/engines", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { engineName, name, description } = req.body;
+    
+    // 支持 engineName 或 name 兩個參數名
+    const finalEngineName = engineName || name;
+
+    if (!finalEngineName) {
+      return res.status(400).json({
+        success: false,
+        message: "Engine name is required",
+      });
+    }
+
+    console.log(`🏗️ User ${userId} creating new engine: ${finalEngineName}`);
+
+    // 檢查用戶是否已經有同名的 Engine
+    const allEngines = await ragSystem.listAllRAGEngines();
+    const existingEngine = allEngines.userEngines.find(
+      (e) => e.userId === userId && e.displayName === `${userId} - ${finalEngineName}`
+    );
+
+    if (existingEngine) {
+      return res.status(400).json({
+        success: false,
+        message: `您已經有一個名為 "${finalEngineName}" 的 Engine`,
+      });
+    }
+
+    const result = await ragSystem.createUserRAGEngine(userId, finalEngineName, description);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: `Engine "${finalEngineName}" 創建成功`,
+        engine: {
+          id: result.corpusId,
+          name: finalEngineName,
+          displayName: `${userId} - ${finalEngineName}`,
+          description: description,
+          createdAt: new Date().toISOString(),
+        },
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: "Engine 創建失敗",
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    console.error(`Create engine error for user ${req.user.userId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// 📋 獲取用戶的所有 RAG Engines
+router.get("/users/engines", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+
+    console.log(`📋 Getting all engines for user: ${userId}`);
+
+    const allEngines = await ragSystem.listAllRAGEngines();
+
+    // 找出用戶的所有 Engines
+    const userEngines = allEngines.userEngines.filter(
+      (e) => e.userId === userId
+    );
+
+    const formattedEngines = userEngines.map(engine => ({
+      id: engine.id,
+      name: engine.displayName?.replace(`${userId} - `, '') || engine.displayName,
+      displayName: engine.displayName,
+      fileCount: engine.fileCount || 0,
+      status: engine.fileCount > 0 ? "active" : "empty",
+      createTime: engine.createTime,
+      updateTime: engine.updateTime,
+    }));
+
+    res.json({
+      success: true,
+      engines: formattedEngines,
+      totalEngines: formattedEngines.length,
+      message: `您有 ${formattedEngines.length} 個 RAG Engine`,
+    });
+  } catch (error) {
+    console.error(`Get engines error for user ${req.user.userId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // 💬 Engine 內全域查詢 - 新增端點
 router.post(
   "/users/:userId/engines/:engineId/query",
@@ -1164,6 +1341,70 @@ router.delete(
   }
 );
 
+// 🗑️ 刪除用戶的特定文檔
+router.delete("/users/documents/:documentId", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { documentId } = req.params;
+
+    console.log(`🗑️ User ${userId} deleting document: ${documentId}`);
+
+    // 查找用戶的 RAG Engine
+    const allEngines = await ragSystem.listAllRAGEngines();
+    const userEngine = allEngines.userEngines.find(
+      (e) => e.userId === userId || e.displayName?.includes(`${userId} Knowledge Base`)
+    );
+
+    if (!userEngine) {
+      return res.status(404).json({
+        success: false,
+        message: "您還沒有知識庫，無法刪除文檔",
+      });
+    }
+
+    // 先獲取文檔列表確認文檔存在
+    const documentsResult = await ragSystem.getUserDocuments(userEngine.fullName);
+    const targetDocument = documentsResult.files?.find(doc => 
+      doc.ragFileId === documentId || doc.displayName === documentId
+    );
+
+    if (!targetDocument) {
+      return res.status(404).json({
+        success: false,
+        message: "指定的文檔不存在或不屬於您",
+      });
+    }
+
+    // 刪除文檔
+    const result = await ragSystem.deleteUserDocument(userId, targetDocument.ragFileId);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: `文檔 "${targetDocument.displayName}" 已成功刪除`,
+        documentId: documentId,
+        deletedDocument: {
+          id: targetDocument.ragFileId,
+          name: targetDocument.displayName,
+          createTime: targetDocument.createTime
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: "刪除文檔失敗",
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    console.error(`Delete document error for user ${req.user.userId}:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // 🔍 操作狀態檢查
 router.get("/operation-status/:operationId", async (req, res) => {
   try {
@@ -1209,33 +1450,408 @@ router.get("/operation-status/:operationId", async (req, res) => {
   }
 });
 
+// 🔍 用戶 RAG 狀態查詢
+router.get("/users/status", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    
+    console.log(`Getting RAG status for user: ${userId}`);
+
+    const allEngines = await ragSystem.listAllRAGEngines();
+
+    if (!allEngines.success) {
+      throw new Error(allEngines.error);
+    }
+
+    // 查找用戶的 RAG Engine
+    const userEngine = allEngines.userEngines.find(
+      (e) => e.userId === userId || e.displayName?.includes(`${userId} Knowledge Base`)
+    );
+
+    let hasRAGEngine = false;
+    let engineInfo = null;
+
+    if (userEngine) {
+      hasRAGEngine = true;
+      engineInfo = {
+        id: userEngine.id,
+        name: userEngine.displayName,
+        status: userEngine.fileCount > 0 ? "active" : "empty",
+        fileCount: userEngine.fileCount || 0,
+        createdAt: userEngine.createTime,
+      };
+    }
+
+    res.json({
+      success: true,
+      hasRAGEngine: hasRAGEngine,
+      userId: userId,
+      engine: engineInfo,
+      message: hasRAGEngine 
+        ? `您有一個 RAG Engine，包含 ${engineInfo.fileCount} 個文件`
+        : "您還沒有 RAG Engine，上傳文件時會自動建立"
+    });
+  } catch (error) {
+    console.error(`Error getting RAG status for user:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// 📤 用戶文檔上傳（支持多個 Engine，可以選擇上傳到指定 Engine）
+router.post(
+  "/users/upload",
+  authenticateToken,
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      const userId = req.user.userId;
+      const file = req.file;
+      const { engineId, engineName } = req.body; // 可以指定要上傳到的 Engine
+
+      if (!file) {
+        return res.status(400).json({
+          success: false,
+          message: "No file uploaded",
+        });
+      }
+
+      console.log(`📤 User ${userId} uploading file: ${file.originalname} (${file.size} bytes)`);
+      if (engineId) console.log(`Target Engine ID: ${engineId}`);
+      if (engineName) console.log(`Target Engine Name: ${engineName}`);
+
+      // 獲取所有 Engines
+      const allEngines = await ragSystem.listAllRAGEngines();
+      let userEngine = null;
+
+      // 如果指定了 Engine ID 或名稱，查找該 Engine
+      if (engineId || engineName) {
+        userEngine = allEngines.userEngines.find(e => {
+          // 檢查 Engine 是否屬於該用戶
+          const belongsToUser = e.userId === userId;
+          if (!belongsToUser) return false;
+          
+          if (engineId) return e.id === engineId;
+          if (engineName) {
+            // 檢查是否匹配完整名稱 "userId - engineName"
+            return e.displayName === `${userId} - ${engineName}`;
+          }
+          return false;
+        });
+
+        if (!userEngine) {
+          return res.status(404).json({
+            success: false,
+            message: engineId ? 
+              `Engine ID "${engineId}" 不存在或不屬於您` : 
+              `Engine "${engineName}" 不存在或不屬於您`,
+          });
+        }
+      } else {
+        // 如果沒有指定 Engine，查找用戶的默認 Engine 或第一個 Engine
+        const userEngines = allEngines.userEngines.filter(
+          e => e.userId === userId
+        );
+
+        if (userEngines.length > 0) {
+          // 優先使用默認的 Knowledge Base，如果沒有則使用第一個
+          userEngine = userEngines.find(e => e.displayName?.includes('Knowledge Base')) || userEngines[0];
+        }
+      }
+
+      // 如果沒有找到 Engine，創建默認的 Knowledge Base
+      if (!userEngine) {
+        console.log(`Creating default RAG Engine for user ${userId}...`);
+        const createResult = await ragSystem.createUserRAGEngine(userId);
+        
+        if (!createResult.success) {
+          throw new Error(`Failed to create RAG engine: ${createResult.error}`);
+        }
+
+        userEngine = {
+          id: createResult.corpusId,
+          fullName: createResult.corpusName,
+          displayName: createResult.displayName,
+          userId: userId,
+        };
+        console.log(`✅ Created default RAG Engine: ${userEngine.id} for user: ${userId}`);
+      } else {
+        console.log(`✅ Using Engine: ${userEngine.displayName} (${userEngine.id}) for user: ${userId}`);
+      }
+
+      // 上傳文件到指定的 Engine
+      const uploadResult = await ragSystem.uploadFileToEngine(
+        userEngine.fullName,
+        userId,
+        file.buffer,
+        file.originalname
+      );
+
+      if (uploadResult.success) {
+        res.json({
+          success: true,
+          message: `文檔 "${file.originalname}" 已成功上傳到您的知識庫`,
+          data: {
+            fileName: file.originalname,
+            engineId: userEngine.id,
+            engineName: userEngine.displayName,
+            operationId: uploadResult.importResult?.operationId,
+            note: "文檔正在處理中，幾分鐘後即可查詢",
+          },
+        });
+      } else {
+        console.error("Upload failed:", uploadResult);
+        res.status(500).json({
+          success: false,
+          message: "文檔上傳失敗",
+          error: uploadResult.error,
+        });
+      }
+    } catch (error) {
+      console.error("User upload error:", error);
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+);
+
+// 💬 用戶文檔查詢（支持多 Engine 查詢）
+router.post("/users/query", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { question, query, engineId, engineName } = req.body;
+    
+    // 支持 question 或 query 兩個參數名
+    const userQuestion = question || query;
+
+    if (!userQuestion) {
+      return res.status(400).json({
+        success: false,
+        message: "Question or query is required",
+      });
+    }
+
+    console.log(`💬 User ${userId} querying: ${userQuestion.substring(0, 50)}...`);
+    if (engineId) console.log(`Target Engine ID: ${engineId}`);
+    if (engineName) console.log(`Target Engine Name: ${engineName}`);
+
+    // 獲取所有 Engines
+    const allEngines = await ragSystem.listAllRAGEngines();
+    let targetEngine = null;
+
+    // 如果指定了 Engine ID 或名稱，查找該 Engine
+    if (engineId || engineName) {
+      targetEngine = allEngines.userEngines.find(e => {
+        // 檢查 Engine 是否屬於該用戶
+        const belongsToUser = e.userId === userId;
+        if (!belongsToUser) return false;
+        
+        if (engineId) return e.id === engineId;
+        if (engineName) {
+          // 檢查是否匹配完整名稱 "userId - engineName"
+          return e.displayName === `${userId} - ${engineName}`;
+        }
+        return false;
+      });
+
+      if (!targetEngine) {
+        return res.status(404).json({
+          success: false,
+          message: engineId ? 
+            `Engine ID "${engineId}" 不存在或不屬於您` : 
+            `Engine "${engineName}" 不存在或不屬於您`,
+        });
+      }
+    } else {
+      // 如果沒有指定 Engine，查找用戶的所有 Engines
+      const userEngines = allEngines.userEngines.filter(
+        e => e.userId === userId
+      );
+
+      if (userEngines.length === 0) {
+        return res.status(404).json({
+          success: false,
+          message: "您還沒有上傳任何文檔，請先上傳文檔建立知識庫",
+        });
+      }
+
+      // 如果有多個 Engine，可以合併查詢或選擇默認的
+      // 這裡先選擇文檔最多的 Engine
+      targetEngine = userEngines.reduce((max, engine) => 
+        (engine.fileCount || 0) > (max.fileCount || 0) ? engine : max
+      );
+    }
+
+    if (targetEngine.fileCount === 0) {
+      return res.status(400).json({
+        success: false,
+        message: `選擇的 Engine "${targetEngine.displayName}" 是空的，請先上傳一些文檔`,
+      });
+    }
+
+    const result = await ragSystem.querySpecificRAG(
+      targetEngine.fullName,
+      userQuestion,
+      userId,
+      targetEngine.displayName
+    );
+
+    if (result.success) {
+      res.json({
+        success: true,
+        answer: result.answer,
+        response: result.answer, // 同時提供兩個字段名以兼容不同的客戶端
+        question: userQuestion,
+        engine: {
+          id: targetEngine.id,
+          name: targetEngine.displayName,
+          fileCount: targetEngine.fileCount,
+        },
+        sources: `來源：${targetEngine.displayName}（${targetEngine.fileCount} 個文檔）`,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    console.error(`User query error:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+// 📋 獲取用戶文檔列表（支持多 Engine）
+router.get("/users/documents", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { engineId, engineName } = req.query; // 可以指定特定的 Engine
+
+    console.log(`📋 Getting documents for user: ${userId}`);
+    if (engineId) console.log(`Target Engine ID: ${engineId}`);
+    if (engineName) console.log(`Target Engine Name: ${engineName}`);
+
+    const allEngines = await ragSystem.listAllRAGEngines();
+    let targetEngines = [];
+
+    if (engineId || engineName) {
+      // 查找指定的 Engine
+      const targetEngine = allEngines.userEngines.find(e => {
+        // 檢查 Engine 是否屬於該用戶
+        const belongsToUser = e.userId === userId;
+        if (!belongsToUser) return false;
+        
+        if (engineId) return e.id === engineId;
+        if (engineName) {
+          // 檢查是否匹配完整名稱 "userId - engineName"
+          return e.displayName === `${userId} - ${engineName}`;
+        }
+        return false;
+      });
+
+      if (!targetEngine) {
+        return res.status(404).json({
+          success: false,
+          message: engineId ? 
+            `Engine ID "${engineId}" 不存在或不屬於您` : 
+            `Engine "${engineName}" 不存在或不屬於您`,
+        });
+      }
+      targetEngines = [targetEngine];
+    } else {
+      // 獲取用戶的所有 Engines
+      targetEngines = allEngines.userEngines.filter(
+        e => e.userId === userId
+      );
+    }
+
+    if (targetEngines.length === 0) {
+      return res.json({
+        success: true,
+        hasEngines: false,
+        engines: [],
+        documents: [],
+        message: "您還沒有知識庫，上傳文件時會自動建立",
+      });
+    }
+
+    // 獲取每個 Engine 的文檔
+    const enginesWithDocuments = [];
+    let allDocuments = [];
+
+    for (const engine of targetEngines) {
+      const documentsResult = await ragSystem.getUserDocuments(engine.fullName);
+      const documents = documentsResult.files || [];
+      
+      // 為每個文檔添加 Engine 信息
+      const documentsWithEngine = documents.map(doc => ({
+        ...doc,
+        engineId: engine.id,
+        engineName: engine.displayName,
+      }));
+
+      enginesWithDocuments.push({
+        id: engine.id,
+        name: engine.displayName,
+        fileCount: engine.fileCount,
+        documents: documentsWithEngine,
+      });
+
+      allDocuments = allDocuments.concat(documentsWithEngine);
+    }
+
+    res.json({
+      success: true,
+      hasEngines: true,
+      engines: enginesWithDocuments,
+      documents: allDocuments,
+      totalEngines: targetEngines.length,
+      totalDocuments: allDocuments.length,
+      message: `共找到 ${targetEngines.length} 個 Engine，${allDocuments.length} 個文檔`,
+    });
+  } catch (error) {
+    console.error(`Error getting user documents:`, error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
 // 🧪 測試端點
 router.get("/test", (req, res) => {
   res.json({
     success: true,
-    message: "Multi-User RAG System is running",
-    version: "2.0.3",
+    message: "Multi-User Multi-Engine RAG System is running",
+    version: "3.0.0",
     features: [
-      "Multi-user RAG engines",
-      "User-specific document upload",
-      "User-specific querying",
-      "Document management (list, delete)",
-      "System-wide RAG engine management",
-      "Auto RAG engine creation",
-      "Document isolation per user",
-      "Enhanced error handling and logging",
+      "一個用戶多個 RAG Engine",
+      "可自定義 Engine 名稱和用途",
+      "多文件上傳到指定 Engine",
+      "跨 Engine 文檔查詢",
+      "Engine 和文檔管理",
+      "用戶專屬多知識庫",
+      "完整的 Engine 生命週期管理",
+      "用戶隔離保護",
+      "完整錯誤處理",
     ],
     endpoints: {
-      userUpload: "POST /api/rag/users/:userId/upload",
-      userQuery: "POST /api/rag/users/:userId/engines/:engineId/query",
-      userEngines: "GET /api/rag/users/:userId/engines",
-      deleteEngine: "DELETE /api/rag/users/:userId/engines/:engineId",
+      createEngine: "POST /api/rag/users/engines",
+      listEngines: "GET /api/rag/users/engines",
+      userStatus: "GET /api/rag/users/status",
+      userUpload: "POST /api/rag/users/upload",
+      userQuery: "POST /api/rag/users/query",
+      userDocuments: "GET /api/rag/users/documents",
+      deleteDocument: "DELETE /api/rag/users/documents/:documentId",
       enginesOverview: "GET /api/rag/engines/overview",
       operationStatus: "GET /api/rag/operation-status/:operationId",
-    },
-    currentSystemEngine: {
-      id: CURRENT_CORPUS_ID,
-      name: CURRENT_CORPUS_NAME,
     },
   });
 });

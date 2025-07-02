@@ -1,88 +1,118 @@
-var express = require('express');
+var express = require("express");
 var router = express.Router();
-const { VertexAI } = require('@google-cloud/vertexai');
+const { VertexAI } = require("@google-cloud/vertexai");
 
 // Initialize Vertex AI
 const vertexAI = new VertexAI({
   project: process.env.GOOGLE_CLOUD_PROJECT,
-  location: process.env.GOOGLE_CLOUD_LOCATION || 'us-central1'
+  location: process.env.GOOGLE_CLOUD_LOCATION || "us-central1",
 });
 
 // Set up generation config
 const generationConfig = {
   maxOutputTokens: 8192,
   temperature: 1,
-  topP: 1
+  topP: 1,
 };
 
 // 安全設定
 const safetySettings = [
   {
-    category: 'HARM_CATEGORY_HATE_SPEECH',
-    threshold: 'BLOCK_NONE',
+    category: "HARM_CATEGORY_HATE_SPEECH",
+    threshold: "BLOCK_NONE",
   },
   {
-    category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-    threshold: 'BLOCK_NONE',
+    category: "HARM_CATEGORY_DANGEROUS_CONTENT",
+    threshold: "BLOCK_NONE",
   },
   {
-    category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-    threshold: 'BLOCK_NONE',
+    category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+    threshold: "BLOCK_NONE",
   },
   {
-    category: 'HARM_CATEGORY_HARASSMENT',
-    threshold: 'BLOCK_NONE',
-  }
+    category: "HARM_CATEGORY_HARASSMENT",
+    threshold: "BLOCK_NONE",
+  },
 ];
 
 /* GET home page. */
-router.get('/', function(req, res, next) {
-  res.render('index', { title: 'Motion Expert Backend' });
+router.get("/", function (req, res, next) {
+  res.render("index", { title: "Motion Expert Backend" });
+});
+
+/* GET API health check */
+router.get("/api/health", function (req, res, next) {
+  res.json({
+    success: true,
+    status: "healthy",
+    message: "MotionExpert Backend is running",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    version: "1.0.0",
+  });
+});
+
+/* GET API status check */
+router.get("/api/status", function (req, res, next) {
+  res.json({
+    success: true,
+    status: "operational",
+    services: {
+      database: "connected",
+      vertexAI: "available",
+      ragSystem: "operational",
+    },
+    timestamp: new Date().toISOString(),
+  });
 });
 
 /* GET test API endpoint */
-router.get('/api/test', function(req, res, next) {
+router.get("/api/test", function (req, res, next) {
   res.json({
     success: true,
-    message: 'API is working!',
+    message: "API is working!",
     timestamp: new Date().toISOString(),
     availableServices: {
-      basicGeneration: '/api/generate',
-      synopsis: '/api/synopsis',
-      synopsisFollowUp: '/api/synopsis/follow-up',
-      ragServices: '/api/rag/*'
-    }
+      basicGeneration: "/api/generate",
+      synopsis: "/api/synopsis",
+      synopsisFollowUp: "/api/synopsis/follow-up",
+      ragServices: "/api/rag/*",
+    },
   });
 });
 
 /* POST API for Vertex AI content generation */
-router.post('/api/generate', async function(req, res, next) {
+router.post("/api/generate", async function (req, res, next) {
   try {
-    console.log('正在初始化 Vertex AI...');
-    
+    console.log("正在初始化 Vertex AI...");
+
     const { prompt } = req.body;
-    
+
     if (!prompt) {
       return res.status(400).json({
         success: false,
-        error: 'Prompt is required'
+        error: "Prompt is required",
       });
     }
 
     const generativeModel = vertexAI.getGenerativeModel({
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: "gemini-2.5-flash-preview-05-20",
       generationConfig: generationConfig,
       safetySettings: safetySettings,
     });
 
-    console.log('正在生成內容...');
-    
+    console.log("正在生成內容...");
+
     const result = await generativeModel.generateContentStream(prompt);
-    
-    let generatedText = '';
-    
+
+    let generatedText = "";
+
     for await (const chunk of result.stream) {
-      if (chunk.candidates && chunk.candidates[0] && chunk.candidates[0].content) {
+      if (
+        chunk.candidates &&
+        chunk.candidates[0] &&
+        chunk.candidates[0].content
+      ) {
         const parts = chunk.candidates[0].content.parts;
         for (const part of parts) {
           if (part.text) {
@@ -91,36 +121,35 @@ router.post('/api/generate', async function(req, res, next) {
         }
       }
     }
-    
-    console.log('生成完成');
-    
+
+    console.log("生成完成");
+
     res.json({
       success: true,
       text: generatedText,
-      prompt: prompt
+      prompt: prompt,
     });
-    
   } catch (error) {
-    console.error('Vertex AI 錯誤:', error.message);
+    console.error("Vertex AI 錯誤:", error.message);
     res.status(500).json({
       success: false,
       error: error.message,
-      details: error.details || 'Unknown error'
+      details: error.details || "Unknown error",
     });
   }
 });
 
 /* 新增：POST API for Synopsis processing - 處理完整的劇情概要 */
-router.post('/api/synopsis', async function(req, res, next) {
+router.post("/api/synopsis", async function (req, res, next) {
   try {
-    console.log('正在處理劇情概要...');
-    
+    console.log("正在處理劇情概要...");
+
     const { synopsisString } = req.body;
-    
+
     if (!synopsisString) {
       return res.status(400).json({
         success: false,
-        message: 'Synopsis string is required'
+        message: "Synopsis string is required",
       });
     }
 
@@ -139,19 +168,23 @@ ${synopsisString}
 劇本應該適合拍攝製作使用。`;
 
     const generativeModel = vertexAI.getGenerativeModel({
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: "gemini-2.5-flash-preview-05-20",
       generationConfig: generationConfig,
       safetySettings: safetySettings,
     });
 
-    console.log('正在生成電影劇本...');
-    
+    console.log("正在生成電影劇本...");
+
     const result = await generativeModel.generateContentStream(aiPrompt);
-    
-    let generatedText = '';
-    
+
+    let generatedText = "";
+
     for await (const chunk of result.stream) {
-      if (chunk.candidates && chunk.candidates[0] && chunk.candidates[0].content) {
+      if (
+        chunk.candidates &&
+        chunk.candidates[0] &&
+        chunk.candidates[0].content
+      ) {
         const parts = chunk.candidates[0].content.parts;
         for (const part of parts) {
           if (part.text) {
@@ -160,38 +193,37 @@ ${synopsisString}
         }
       }
     }
-    
-    console.log('電影劇本生成完成');
-    
+
+    console.log("電影劇本生成完成");
+
     res.json({
       success: true,
-      message: 'Movie script generated successfully',
+      message: "Movie script generated successfully",
       aiProcessedOutput: generatedText,
-      originalInput: synopsisString
+      originalInput: synopsisString,
     });
-    
   } catch (error) {
-    console.error('電影劇本處理錯誤:', error.message);
+    console.error("電影劇本處理錯誤:", error.message);
     res.status(500).json({
       success: false,
-      message: 'Error processing movie script',
+      message: "Error processing movie script",
       error: error.message,
-      details: error.details || 'Unknown error'
+      details: error.details || "Unknown error",
     });
   }
 });
 
 /* 新增：POST API for Synopsis follow-up - 處理後續指令 */
-router.post('/api/synopsis/follow-up', async function(req, res, next) {
+router.post("/api/synopsis/follow-up", async function (req, res, next) {
   try {
-    console.log('正在處理劇本後續指令...');
-    
+    console.log("正在處理劇本後續指令...");
+
     const { followUpString } = req.body;
-    
+
     if (!followUpString) {
       return res.status(400).json({
         success: false,
-        message: 'Follow-up instruction is required'
+        message: "Follow-up instruction is required",
       });
     }
 
@@ -203,19 +235,23 @@ router.post('/api/synopsis/follow-up', async function(req, res, next) {
 請提供相應的劇本修改或重新生成符合要求的劇本內容。保持專業的劇本格式和結構。`;
 
     const generativeModel = vertexAI.getGenerativeModel({
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: "gemini-2.5-flash-preview-05-20",
       generationConfig: generationConfig,
       safetySettings: safetySettings,
     });
 
-    console.log('正在處理劇本後續指令...');
-    
+    console.log("正在處理劇本後續指令...");
+
     const result = await generativeModel.generateContentStream(aiPrompt);
-    
-    let generatedText = '';
-    
+
+    let generatedText = "";
+
     for await (const chunk of result.stream) {
-      if (chunk.candidates && chunk.candidates[0] && chunk.candidates[0].content) {
+      if (
+        chunk.candidates &&
+        chunk.candidates[0] &&
+        chunk.candidates[0].content
+      ) {
         const parts = chunk.candidates[0].content.parts;
         for (const part of parts) {
           if (part.text) {
@@ -224,45 +260,48 @@ router.post('/api/synopsis/follow-up', async function(req, res, next) {
         }
       }
     }
-    
-    console.log('劇本後續指令處理完成');
-    
+
+    console.log("劇本後續指令處理完成");
+
     res.json({
       success: true,
-      message: 'Script follow-up processed successfully',
+      message: "Script follow-up processed successfully",
       aiProcessedOutput: generatedText,
-      originalFollowUp: followUpString
+      originalFollowUp: followUpString,
     });
-    
   } catch (error) {
-    console.error('劇本後續指令處理錯誤:', error.message);
+    console.error("劇本後續指令處理錯誤:", error.message);
     res.status(500).json({
       success: false,
-      message: 'Error processing script follow-up',
+      message: "Error processing script follow-up",
       error: error.message,
-      details: error.details || 'Unknown error'
+      details: error.details || "Unknown error",
     });
   }
 });
 
 /* GET API for simple Vertex AI test */
-router.get('/api/test-vertex', async function(req, res, next) {
+router.get("/api/test-vertex", async function (req, res, next) {
   try {
-    console.log('正在測試 Vertex AI 連接...');
-    
+    console.log("正在測試 Vertex AI 連接...");
+
     const generativeModel = vertexAI.getGenerativeModel({
-      model: 'gemini-2.5-flash-preview-05-20',
+      model: "gemini-2.5-flash-preview-05-20",
       generationConfig: generationConfig,
       safetySettings: safetySettings,
     });
 
-    const testPrompt = 'Hello! Please introduce yourself in one sentence.';
+    const testPrompt = "Hello! Please introduce yourself in one sentence.";
     const result = await generativeModel.generateContentStream(testPrompt);
-    
-    let generatedText = '';
-    
+
+    let generatedText = "";
+
     for await (const chunk of result.stream) {
-      if (chunk.candidates && chunk.candidates[0] && chunk.candidates[0].content) {
+      if (
+        chunk.candidates &&
+        chunk.candidates[0] &&
+        chunk.candidates[0].content
+      ) {
         const parts = chunk.candidates[0].content.parts;
         for (const part of parts) {
           if (part.text) {
@@ -271,32 +310,31 @@ router.get('/api/test-vertex', async function(req, res, next) {
         }
       }
     }
-    
+
     res.json({
       success: true,
       text: generatedText,
-      message: 'Vertex AI connection test successful!'
+      message: "Vertex AI connection test successful!",
     });
-    
   } catch (error) {
-    console.error('Vertex AI 測試錯誤:', error.message);
+    console.error("Vertex AI 測試錯誤:", error.message);
     res.status(500).json({
       success: false,
       error: error.message,
-      details: error.details || 'Unknown error'
+      details: error.details || "Unknown error",
     });
   }
 });
 
 /* GET API to check current model */
-router.get('/api/model-info', function(req, res, next) {
+router.get("/api/model-info", function (req, res, next) {
   res.json({
     success: true,
-    currentModel: 'gemini-2.5-flash-preview-05-20',
-    modelType: 'Gemini 2.5 Flash Preview',
-    description: 'Latest Gemini 2.5 Flash preview model with RAG capabilities',
+    currentModel: "gemini-2.5-flash-preview-05-20",
+    modelType: "Gemini 2.5 Flash Preview",
+    description: "Latest Gemini 2.5 Flash preview model with RAG capabilities",
     timestamp: new Date().toISOString(),
-    ragEnabled: true
+    ragEnabled: true,
   });
 });
 

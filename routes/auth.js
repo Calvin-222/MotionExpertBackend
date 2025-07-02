@@ -201,4 +201,49 @@ router.get("/me", async (req, res) => {
   }
 });
 
+// Token 驗證端點
+router.get('/verify', async (req, res) => {
+  try {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'Access token required'
+      });
+    }
+
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    
+    const [users] = await db.execute(
+      "SELECT userid, username FROM users WHERE userid = ?",
+      [decoded.userId]
+    );
+
+    if (users.length === 0) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "User not found" 
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Token is valid',
+      user: {
+        userId: users[0].userid,
+        username: users[0].username
+      },
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("Token verification error:", error);
+    res.status(401).json({ 
+      success: false, 
+      message: "Invalid token" 
+    });
+  }
+});
+
 module.exports = router;
