@@ -3,46 +3,52 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
 const db = require("../config/database");
-const ratelimit = require('express-rate-limit')
-const validator = require('validator')  
+const ratelimit = require("express-rate-limit");
+const validator = require("validator");
 
-
-// Rate limiting middleware 
+// Rate limiting middleware
 const limiter = ratelimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 15, // Limit each IP to 15 requests per windowMs
-  message: 'Too many requests, please try again later.'
-})
+  message: "Too many requests, please try again later.",
+});
 
 const validateInput = (req, res, next) => {
-  const { username, password } = req.body
+  const { username, password } = req.body;
 
   // Validate username format
-  if (typeof username !== 'string' || !/^[a-zA-Z0-9_]+$/.test(username)) {
+  if (typeof username !== "string" || !/^[a-zA-Z0-9_]+$/.test(username)) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid username format'
-    })
+      message: "Invalid username format",
+    });
   }
 
   // Check for dangerous patterns in username
-  const dangerousPatterns = [/<script/i, /javascript:/i, /vbscript:/i, /on\w+=/i, /<iframe/i]
-  if (dangerousPatterns.some(pattern => pattern.test(username))) {
+  const dangerousPatterns = [
+    /<script/i,
+    /javascript:/i,
+    /vbscript:/i,
+    /on\w+=/i,
+    /<iframe/i,
+  ];
+  if (dangerousPatterns.some((pattern) => pattern.test(username))) {
     return res.status(400).json({
       success: false,
-      message: 'Invalid characters in username'
-    })
+      message: "Invalid characters in username",
+    });
   }
 
   // Sanitize inputs
-  req.body.username = validator.escape(username.trim())
-  req.body.password = password // Don't sanitize password, just validate length
+  req.body.username = validator.escape(username.trim());
+  req.body.password = password; // Don't sanitize password, just validate length
 
-  next()
-}
+  next();
+};
 
 // Login route 修正
-router.post('/login',limiter, validateInput, async (req, res) => {  //apply rate limiting and input validation to this route
+router.post("/login", limiter, validateInput, async (req, res) => {
+  //apply rate limiting and input validation to this route
   try {
     const { username, password } = req.body;
 
@@ -69,8 +75,8 @@ router.post('/login',limiter, validateInput, async (req, res) => {  //apply rate
 
     const token = jwt.sign(
       { userId: user.userid, username: user.username },
-      process.env.JWT_SECRET ,
-      { expiresIn: "24h" } // 
+      process.env.JWT_SECRET,
+      { expiresIn: "24h" } //
     );
 
     res.json({
@@ -89,7 +95,7 @@ router.post('/login',limiter, validateInput, async (req, res) => {  //apply rate
 });
 
 // Registration route 修正
-router.post('/register',limiter, validateInput, async (req, res) => {
+router.post("/register", limiter, validateInput, async (req, res) => {
   try {
     const { username, password, confirmPassword } = req.body;
 
@@ -145,7 +151,7 @@ router.post('/register',limiter, validateInput, async (req, res) => {
     // Create JWT token for immediate login
     const token = jwt.sign(
       { userId: newUser[0].userid, username: username },
-      process.env.JWT_SECRET ,
+      process.env.JWT_SECRET,
       { expiresIn: "24h" } // 修正：改為 24 小時
     );
 
@@ -175,10 +181,7 @@ router.get("/me", async (req, res) => {
         .json({ success: false, message: "No token provided" });
     }
 
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET
-    );
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const [users] = await db.execute(
       "SELECT userid, username FROM users WHERE userid = ?",
@@ -202,46 +205,46 @@ router.get("/me", async (req, res) => {
 });
 
 // Token 驗證端點
-router.get('/verify', async (req, res) => {
+router.get("/verify", async (req, res) => {
   try {
-    const authHeader = req.headers['authorization'];
-    const token = authHeader && authHeader.split(' ')[1];
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
 
     if (!token) {
       return res.status(401).json({
         success: false,
-        message: 'Access token required'
+        message: "Access token required",
       });
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+
     const [users] = await db.execute(
       "SELECT userid, username FROM users WHERE userid = ?",
       [decoded.userId]
     );
 
     if (users.length === 0) {
-      return res.status(401).json({ 
-        success: false, 
-        message: "User not found" 
+      return res.status(401).json({
+        success: false,
+        message: "User not found",
       });
     }
 
     res.json({
       success: true,
-      message: 'Token is valid',
+      message: "Token is valid",
       user: {
         userId: users[0].userid,
-        username: users[0].username
+        username: users[0].username,
       },
-      timestamp: new Date().toISOString()
+      timestamp: new Date().toISOString(),
     });
   } catch (error) {
     console.error("Token verification error:", error);
-    res.status(401).json({ 
-      success: false, 
-      message: "Invalid token" 
+    res.status(401).json({
+      success: false,
+      message: "Invalid token",
     });
   }
 });
