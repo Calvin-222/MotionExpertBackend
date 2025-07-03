@@ -3,7 +3,10 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "start": "node ./bin/www"
+    "start": "node ./bin/www",
+    "test": "node tests/rag.test.js",
+    "test:rag": "node tests/rag.test.js",
+    "test:quota": "node comprehensive-test.js"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.16.0",
@@ -27,5 +30,9 @@
     "multer": "^2.0.1",
     "mysql2": "^3.14.1",
     "validator": "^13.15.15"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "supertest": "^6.3.4"
   }
 }
