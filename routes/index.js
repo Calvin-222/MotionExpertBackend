@@ -2,7 +2,6 @@ var express = require("express");
 var router = express.Router();
 const { pool } = require("../config/database");
 const { VertexAI } = require("@google-cloud/vertexai");
-//waghaha
 // Initialize Vertex AI
 const vertexAI = new VertexAI({
   project: process.env.GOOGLE_CLOUD_PROJECT,
