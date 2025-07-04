@@ -1,5 +1,6 @@
 var express = require("express");
 var router = express.Router();
+const db = require("../config/database");
 const { VertexAI } = require("@google-cloud/vertexai");
 
 // Initialize Vertex AI
@@ -336,6 +337,36 @@ router.get("/api/model-info", function (req, res, next) {
     timestamp: new Date().toISOString(),
     ragEnabled: true,
   });
+});
+
+router.get('/api/add-friends', async (req, res) => {
+  try {
+    const searchTerm = req.query.search || '';
+    
+    let query = 'SELECT userid, username, created_at FROM users';
+    let queryParams = [];
+    
+    if (searchTerm) {
+      query += ' WHERE username LIKE ?';
+      queryParams.push(`%${searchTerm}%`);
+    }
+    
+    query += ' ORDER BY created_at DESC LIMIT 50';
+    
+    const [users] = await db.execute(query, queryParams);
+    
+    res.json({
+      success: true,
+      users: users,
+      count: users.length
+    });
+  } catch (error) {
+    console.error('Search error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error' 
+    });
+  }
 });
 
 module.exports = router;
