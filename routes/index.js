@@ -7,7 +7,7 @@ const vertexAI = new VertexAI({
   project: process.env.GOOGLE_CLOUD_PROJECT,
   location: process.env.GOOGLE_CLOUD_LOCATION || "us-central1",
 });
-
+//dawdwa
 // Set up generation config
 const generationConfig = {
   maxOutputTokens: 8192,
