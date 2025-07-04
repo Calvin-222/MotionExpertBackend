@@ -2,7 +2,7 @@ const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const router = express.Router();
-const db = require("../config/database");
+const { pool }= require("../config/database");
 const ratelimit = require("express-rate-limit");
 const validator = require("validator");
 
@@ -52,7 +52,7 @@ router.post("/login", limiter, validateInput, async (req, res) => {
   try {
     const { username, password } = req.body;
 
-    const [users] = await db.execute("SELECT * FROM users WHERE username = ?", [
+    const [users] = await pool.execute("SELECT * FROM users WHERE username = ?", [
       username,
     ]);
 
@@ -119,7 +119,7 @@ router.post("/register", limiter, validateInput, async (req, res) => {
     }
 
     // Check if username already exists
-    const [existingUsers] = await db.execute(
+    const [existingUsers] = await pool.execute(
       "SELECT userid FROM users WHERE username = ?",
       [username]
     );
@@ -133,13 +133,13 @@ router.post("/register", limiter, validateInput, async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, saltRounds);
 
     // Insert new user (userid 會自動生成 UUID)
-    const [result] = await db.execute(
+    const [result] = await pool.execute(
       "INSERT INTO users (username, password) VALUES (?, ?)",
       [username, hashedPassword]
     );
 
     // 獲取新創建的用戶信息（包括自動生成的 UUID）
-    const [newUser] = await db.execute(
+    const [newUser] = await pool.execute(
       "SELECT userid, username FROM users WHERE username = ?",
       [username]
     );
@@ -183,7 +183,7 @@ router.get("/me", async (req, res) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const [users] = await db.execute(
+    const [users] = await pool.execute(
       "SELECT userid, username FROM users WHERE userid = ?",
       [decoded.userId]
     );
@@ -219,7 +219,7 @@ router.get("/verify", async (req, res) => {
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    const [users] = await db.execute(
+    const [users] = await pool.execute(
       "SELECT userid, username FROM users WHERE userid = ?",
       [decoded.userId]
     );

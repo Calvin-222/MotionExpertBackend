@@ -1,6 +1,6 @@
 var express = require("express");
 var router = express.Router();
-const db = require("../config/database");
+const { pool } = require("../config/database");
 const { VertexAI } = require("@google-cloud/vertexai");
 
 // Initialize Vertex AI
@@ -353,7 +353,7 @@ router.get('/api/add-friends', async (req, res) => {
     
     query += ' ORDER BY created_at DESC LIMIT 50';
     
-    const [users] = await db.execute(query, queryParams);
+    const [users] = await pool.execute(query, queryParams);
     
     res.json({
       success: true,
