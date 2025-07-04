@@ -130,8 +130,8 @@ class MultiUserRAGSystem {
     return await this.engineMgmt.waitForOperation(operationName, maxWaitTime);
   }
 
-  async listAllRAGEngines() {
-    return await this.engineMgmt.listAllRAGEngines();
+  async listAllRAGEngines(pageSize = 100) {
+    return await this.engineMgmt.listAllRAGEngines(pageSize);
   }
 
   extractUserIdFromEngine(corpus) {

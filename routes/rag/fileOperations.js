@@ -78,50 +78,22 @@ class FileOperations {
     }
   }
 
-  // 🔄 導入文件到指定的 RAG Engine（使用正確的 API 格式）
+  // 🔄 導入文件到指定的 RAG Engine（使用官方 API 格式）
   async importFileToRAG(corpusName, filePath) {
     try {
-      console.log(`🔄 Attempting to import file: ${filePath}`);
+      console.log(`🔄 Importing single file: ${filePath}`);
       console.log(`🎯 Target corpus: ${corpusName}`);
 
-      // 暫時跳過 Google RAG API 導入，因為 API 格式問題
-      // 檔案已經上傳到 Cloud Storage，映射已保存到資料庫
-      // 這是一個優雅的降級處理
-
-      console.log(`⚠️ Google RAG API 導入暫時跳過（API 格式問題）`);
-      console.log(`✅ 檔案已上傳到 Cloud Storage: ${filePath}`);
-      console.log(`✅ 檔案映射已保存到資料庫`);
-
-      return {
-        success: true,
-        status: "uploaded_but_not_indexed",
-        message: "檔案已上傳並保存映射，但未導入到 Google RAG（API 格式問題）",
-        skipReason: "Google RAG API 參數格式需要修正",
-        filePath: filePath,
-        corpusName: corpusName,
-      };
-
-      /* 
-      // 當 API 格式修正後，取消註解以下程式碼：
-      
-      const authClient = await this.auth.getClient();
-      const accessToken = await authClient.getAccessToken();
-
-      const importUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles:import`;
-
-      // TODO: 需要找到正確的 API 格式
-      const importRequest = {
-        // 正確的格式待確認
-      };
-
-      const response = await axios.post(importUrl, importRequest, {
-        headers: {
-          Authorization: `Bearer ${accessToken.token}`,
-          "Content-Type": "application/json",
-        },
+      // 使用增強版功能和 Cloud Storage 配置
+      const gcsConfig = this.createImportConfig("gcs", {
+        uris: [filePath],
       });
-      
-      */
+
+      if (!gcsConfig) {
+        throw new Error("Failed to create GCS import configuration");
+      }
+
+      return await this.importFilesToRAG(corpusName, gcsConfig);
     } catch (error) {
       console.error(`❌ Failed to import file ${filePath} to RAG:`);
       console.error("Error details:", {
@@ -140,6 +112,195 @@ class FileOperations {
         error: error.response?.data || error.message,
         isQuotaError: isQuotaError,
         userMessage: isQuotaError ? "目前系統繁忙，請稍後再試" : "文件導入失敗",
+      };
+    }
+  }
+
+  // 🔄 增強版：支援多種數據來源的檔案導入功能
+  // 根據 Google 官方文檔：https://cloud.google.com/vertex-ai/generative-ai/docs/rag/rag-data-ingestion
+  async importFilesToRAG(corpusName, importConfig, importResultSink = null) {
+    try {
+      console.log(`🔄 Enhanced import operation to: ${corpusName}`);
+      console.log(`📋 Import config type:`, Object.keys(importConfig)[0]);
+
+      const authClient = await this.auth.getClient();
+      const accessToken = await authClient.getAccessToken();
+
+      const importUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles:import`;
+
+      // 構建導入請求，支援多種來源
+      const importRequest = {
+        import_rag_files_config: importConfig,
+      };
+
+      // 如果提供了結果接收器，加入到請求中
+      if (importResultSink) {
+        importRequest.import_result_sink = importResultSink;
+      }
+
+      console.log(`📤 Importing to: ${importUrl}`);
+      console.log(`📄 Import request:`, JSON.stringify(importRequest, null, 2));
+
+      const response = await axios.post(importUrl, importRequest, {
+        headers: {
+          Authorization: `Bearer ${accessToken.token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      console.log(`✅ Enhanced import operation started successfully`);
+      console.log(`🆔 Operation name: ${response.data.name || "N/A"}`);
+
+      return {
+        success: true,
+        status: "import_started",
+        message: "增強版檔案導入操作已啟動",
+        operationName: response.data.name,
+        importConfig: importConfig,
+        corpusName: corpusName,
+        response: response.data,
+      };
+    } catch (error) {
+      console.error(`❌ Enhanced import failed:`, error.message);
+      console.error("Error details:", {
+        response: error.response?.data,
+        status: error.response?.status,
+      });
+
+      const isQuotaError =
+        error.response?.data?.error?.code === 429 ||
+        error.response?.data?.error?.status === "RESOURCE_EXHAUSTED" ||
+        error.response?.data?.error?.message?.includes("Quota exceeded");
+
+      return {
+        success: false,
+        error: error.response?.data || error.message,
+        isQuotaError: isQuotaError,
+        userMessage: isQuotaError
+          ? "目前系統繁忙，請稍後再試"
+          : "增強版檔案導入失敗",
+      };
+    }
+  }
+
+  // 🛠️ 創建不同數據來源的導入配置
+  // 根據官方文檔支援: Cloud Storage, Google Drive, Slack, Jira, SharePoint
+  createImportConfig(sourceType, sourceConfig) {
+    const configs = {
+      // Cloud Storage 來源
+      gcs: {
+        gcs_source: {
+          uris: sourceConfig.uris || [],
+        },
+      },
+
+      // Google Drive 來源
+      drive: {
+        google_drive_source: {
+          resource_ids: sourceConfig.resourceIds || [],
+        },
+      },
+
+      // Slack 來源
+      slack: {
+        slack_source: {
+          channels: [
+            {
+              api_key_config: {
+                api_key_secret_version: sourceConfig.apiKeySecretVersion,
+              },
+              channels: sourceConfig.channels || [],
+            },
+          ],
+        },
+      },
+
+      // Jira 來源
+      jira: {
+        jira_source: {
+          jira_queries: [
+            {
+              projects: sourceConfig.projects || [],
+              custom_queries: sourceConfig.customQueries || [],
+              email: sourceConfig.email,
+              server_uri: sourceConfig.serverUri,
+              api_key_config: {
+                api_key_secret_version: sourceConfig.apiKeySecretVersion,
+              },
+            },
+          ],
+        },
+      },
+
+      // SharePoint 來源
+      sharepoint: {
+        share_point_sources: {
+          share_point_source: [
+            {
+              client_id: sourceConfig.clientId,
+              api_key_config: {
+                api_key_secret_version: sourceConfig.apiKeySecretVersion,
+              },
+              tenant_id: sourceConfig.tenantId,
+              sharepoint_site_name: sourceConfig.siteName,
+              sharepoint_folder_path: sourceConfig.folderPath || "",
+              drive_name: sourceConfig.driveName,
+            },
+          ],
+        },
+      },
+    };
+
+    return configs[sourceType] || null;
+  }
+
+  // 🔍 檢查導入操作狀態
+  async checkImportOperationStatus(operationName) {
+    try {
+      const authClient = await this.auth.getClient();
+      const accessToken = await authClient.getAccessToken();
+
+      // 操作狀態檢查 URL
+      const statusUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${operationName}`;
+
+      console.log(`🔍 Checking operation status: ${statusUrl}`);
+
+      const response = await axios.get(statusUrl, {
+        headers: {
+          Authorization: `Bearer ${accessToken.token}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      const operation = response.data;
+      const isDone = operation.done || false;
+      const hasError = operation.error ? true : false;
+
+      let status = "running";
+      if (isDone && hasError) {
+        status = "failed";
+      } else if (isDone && !hasError) {
+        status = "completed";
+      }
+
+      console.log(`📊 Operation status: ${status}, Done: ${isDone}`);
+
+      return {
+        success: true,
+        operationName: operationName,
+        status: status,
+        done: isDone,
+        error: operation.error || null,
+        result: operation.response || null,
+        metadata: operation.metadata || null,
+        rawResponse: operation,
+      };
+    } catch (error) {
+      console.error(`❌ Failed to check operation status:`, error.message);
+      return {
+        success: false,
+        error: error.response?.data || error.message,
+        operationName: operationName,
       };
     }
   }
@@ -303,7 +464,7 @@ class FileOperations {
       } else {
         // 🔧 先檢查用戶是否已有 RAG Engine，如果有則使用，沒有才創建
         console.log(`📤 Checking for existing RAG Engine for user: ${userId}`);
-        
+
         // 先嘗試獲取用戶現有的 RAG Engine
         const existingEngineQuery = `
           SELECT ragid, ragname, visibility 
@@ -312,13 +473,15 @@ class FileOperations {
           ORDER BY created_at DESC 
           LIMIT 1
         `;
-        const [existingEngines] = await this.db.execute(existingEngineQuery, [userId]);
-        
+        const [existingEngines] = await this.db.execute(existingEngineQuery, [
+          userId,
+        ]);
+
         if (existingEngines.length > 0) {
           // 使用現有的 RAG Engine
           const existing = existingEngines[0];
           console.log(`📤 Using existing RAG Engine: ${existing.ragid}`);
-          
+
           userEngine = {
             id: existing.ragid,
             fullName: `projects/${this.projectId}/locations/${this.location}/ragCorpora/${existing.ragid}`,

@@ -115,7 +115,7 @@ class EngineManagement {
           sqlState: dbError.sqlState,
           sqlMessage: dbError.sqlMessage,
         });
-        
+
         // 🔧 如果資料庫保存失敗，回滾 Google Cloud 創建的 RAG Engine
         try {
           console.log("🔄 Attempting to rollback Google Cloud RAG Engine...");
@@ -130,7 +130,7 @@ class EngineManagement {
         } catch (rollbackError) {
           console.error("❌ Rollback failed:", rollbackError.message);
         }
-        
+
         // 拋出錯誤，停止後續操作
         throw new Error(`Database save failed: ${dbError.message}`);
       }
@@ -245,26 +245,59 @@ class EngineManagement {
     }
   }
 
-  // 📋 列出所有 RAG Engines - 整合資料庫信息
-  async listAllRAGEngines() {
+  // 📋 列出所有 RAG Engines - 整合資料庫信息（支援分頁）
+  async listAllRAGEngines(pageSize = 100) {
     try {
       return await this.rateLimitedCall(async () => {
         const authClient = await this.auth.getClient();
         const accessToken = await authClient.getAccessToken();
 
-        const listUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/projects/${this.projectId}/locations/${this.location}/ragCorpora`;
+        let allRagCorpora = [];
+        let nextPageToken = null;
+        let totalPages = 0;
 
-        console.log("Listing all RAG engines from:", listUrl);
+        do {
+          const listUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/projects/${this.projectId}/locations/${this.location}/ragCorpora`;
 
-        const response = await axios.get(listUrl, {
-          headers: {
-            Authorization: `Bearer ${accessToken.token}`,
-            "Content-Type": "application/json",
-          },
-        });
+          // 構建查詢參數
+          const params = new URLSearchParams();
+          params.append("pageSize", pageSize.toString());
+          if (nextPageToken) {
+            params.append("pageToken", nextPageToken);
+          }
 
-        const ragCorpora = response.data.ragCorpora || [];
-        console.log(`Found ${ragCorpora.length} RAG corpora`);
+          const fullUrl = `${listUrl}?${params.toString()}`;
+          console.log(
+            `Listing RAG engines from: ${fullUrl} (Page ${totalPages + 1})`
+          );
+
+          const response = await axios.get(fullUrl, {
+            headers: {
+              Authorization: `Bearer ${accessToken.token}`,
+              "Content-Type": "application/json",
+            },
+          });
+
+          const ragCorpora = response.data.ragCorpora || [];
+          allRagCorpora = allRagCorpora.concat(ragCorpora);
+
+          nextPageToken = response.data.nextPageToken;
+          totalPages++;
+
+          console.log(
+            `Page ${totalPages}: Found ${ragCorpora.length} RAG corpora (Total so far: ${allRagCorpora.length})`
+          );
+
+          // 安全檢查：防止無限循環
+          if (totalPages > 10) {
+            console.warn(`停止分頁請求，已處理 ${totalPages} 頁`);
+            break;
+          }
+        } while (nextPageToken);
+
+        console.log(
+          `✅ 分頁完成：共 ${totalPages} 頁，總計 ${allRagCorpora.length} 個 RAG Engines`
+        );
 
         // 從資料庫獲取額外信息
         const [dbRags] = await this.db.execute("SELECT * FROM rag");
@@ -273,7 +306,7 @@ class EngineManagement {
           dbRagMap[rag.ragid] = rag;
         });
 
-        const engines = ragCorpora.map((corpus) => {
+        const engines = allRagCorpora.map((corpus) => {
           const corpusId = corpus.name
             ? corpus.name.split("/").pop()
             : "unknown";
@@ -303,7 +336,14 @@ class EngineManagement {
           engines: engines,
           totalEngines: engines.length,
           dbEngines: dbRags.length,
+          totalPages: totalPages,
           timestamp: new Date().toISOString(),
+          pagination: {
+            requestedPageSize: pageSize,
+            actualPages: totalPages,
+            totalResults: engines.length,
+            hasMultiplePages: totalPages > 1,
+          },
         };
       });
     } catch (error) {

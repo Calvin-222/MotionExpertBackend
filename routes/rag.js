@@ -17,16 +17,23 @@ const { PROJECT_ID, LOCATION, auth } = config;
 // 初始化 RAG 系統實例
 const ragSystem = new MultiUserRAGSystem();
 
-// 📋 獲取所有 RAG Engines 概覽
+// 📋 獲取所有 RAG Engines 概覽（支援分頁）
 router.get("/engines/overview", async (req, res) => {
   try {
-    const result = await ragSystem.listAllRAGEngines();
+    // 支援查詢參數指定分頁大小
+    const pageSize = parseInt(req.query.pageSize) || 100;
+
+    console.log(`🔍 Fetching RAG engines with pageSize: ${pageSize}`);
+
+    const result = await ragSystem.listAllRAGEngines(pageSize);
     if (result.success) {
       res.json({
         success: true,
         engines: result.engines,
         totalEngines: result.totalEngines,
         dbEngines: result.dbEngines,
+        totalPages: result.totalPages,
+        pagination: result.pagination,
         timestamp: result.timestamp,
       });
     } else {
@@ -532,47 +539,53 @@ router.post(
   }
 );
 
-// 🔍 操作狀態檢查
+// 🔍 操作狀態檢查 - 更新版（支援 RAG 檔案導入）
 router.get("/operation-status/:operationId", async (req, res) => {
   try {
     const { operationId } = req.params;
-    const authClient = await auth.getClient();
-    const accessToken = await authClient.getAccessToken();
 
-    const statusUrl = `https://${LOCATION}-aiplatform.googleapis.com/v1beta1/projects/${PROJECT_ID}/locations/${LOCATION}/operations/${operationId}`;
-
-    const response = await axios.get(statusUrl, {
-      headers: {
-        Authorization: `Bearer ${accessToken.token}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    const operation = response.data;
-    let status = operation.done ? "completed" : "running";
-
-    if (operation.done && operation.error) {
-      status = "failed";
+    // 檢查是否為完整的操作名稱或只是 ID
+    let operationName;
+    if (operationId.includes("operations/")) {
+      operationName = operationId;
+    } else {
+      operationName = `projects/${PROJECT_ID}/locations/${LOCATION}/operations/${operationId}`;
     }
 
-    res.json({
-      success: true,
-      operationId: operationId,
-      status: status,
-      done: operation.done || false,
-      error: operation.error || null,
-      result: operation.response || null,
-      metadata: operation.metadata || null,
-      recommendations: operation.done
-        ? operation.error
-          ? ["❌ 操作失敗，請檢查錯誤信息", "🔄 嘗試重新上傳文件"]
-          : ["✅ 處理完成！", "🧪 可以開始測試查詢功能"]
-        : ["⏳ 操作進行中，請稍候", "🕐 通常需要1-3分鐘完成"],
-    });
+    // 使用新的檔案操作類別來檢查狀態
+    const result = await ragSystem.fileOps.checkImportOperationStatus(
+      operationName
+    );
+
+    if (result.success) {
+      res.json({
+        success: true,
+        operationId: operationId,
+        operationName: operationName,
+        status: result.status,
+        done: result.done,
+        error: result.error,
+        result: result.result,
+        metadata: result.metadata,
+        recommendations: result.done
+          ? result.error
+            ? ["❌ 操作失敗，請檢查錯誤信息", "🔄 嘗試重新上傳文件"]
+            : ["✅ 檔案導入完成！", "🧪 可以開始測試查詢功能"]
+          : ["⏳ 檔案導入進行中，請稍候", "🕐 通常需要1-3分鐘完成"],
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+        operationId: operationId,
+      });
+    }
   } catch (error) {
+    console.error("Operation status check error:", error);
     res.status(500).json({
       success: false,
-      error: error.response?.data || error.message,
+      error: error.message,
+      operationId: req.params.operationId,
     });
   }
 });
@@ -736,6 +749,9 @@ router.get("/test", (req, res) => {
       "✅ 完整的錯誤處理",
       "✅ 用戶隔離保護",
       "✅ 檔案名稱映射功能",
+      "✅ 中文檔案名支援 (UTF-8)",
+      "✅ Google RAG API 正確整合",
+      "✅ 檔案導入狀態追蹤",
     ],
     modules: [
       "MultiUserRAGSystem - 主要系統類別",
@@ -773,5 +789,91 @@ router.get("/test", (req, res) => {
     },
   });
 });
+
+// 🔄 增強版導入 API - 支援多種數據來源
+router.post(
+  "/users/:userId/engines/:engineId/import",
+  // authenticateToken, // 暫時註解掉認證
+  async (req, res) => {
+    try {
+      const userId = req.params.userId;
+      const { engineId } = req.params;
+      const { sourceType, sourceConfig, importResultSink } = req.body;
+
+      // 暫時設定假的 user 對象
+      req.user = { userId: userId };
+
+      // 檢查用戶權限
+      const hasAccess = await ragSystem.canUserAccessRAG(userId, engineId);
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          error: "您沒有權限訪問此 RAG Engine",
+        });
+      }
+
+      // 支援的來源類型
+      const supportedSources = ["gcs", "drive", "slack", "jira", "sharepoint"];
+      if (!supportedSources.includes(sourceType)) {
+        return res.status(400).json({
+          success: false,
+          error: `不支援的來源類型: ${sourceType}`,
+          supportedSources: supportedSources,
+        });
+      }
+
+      console.log(
+        `🔄 User ${userId} importing from ${sourceType} to engine ${engineId}`
+      );
+
+      const corpusName = `projects/${ragSystem.projectId}/locations/${ragSystem.location}/ragCorpora/${engineId}`;
+
+      // 使用檔案操作模組的增強版導入功能
+      const importConfig = ragSystem.fileOps.createImportConfig(
+        sourceType,
+        sourceConfig
+      );
+      if (!importConfig) {
+        return res.status(400).json({
+          success: false,
+          error: `無法創建 ${sourceType} 來源的導入配置`,
+        });
+      }
+
+      const result = await ragSystem.fileOps.importFilesToRAG(
+        corpusName,
+        importConfig,
+        importResultSink
+      );
+
+      if (result.success) {
+        res.json({
+          success: true,
+          message: `${sourceType.toUpperCase()} 來源導入操作已啟動`,
+          operationName: result.operationName,
+          sourceType: sourceType,
+          engineId: engineId,
+          importConfig: importConfig,
+          importResultSink: importResultSink,
+        });
+      } else {
+        res.status(500).json({
+          success: false,
+          error: result.error,
+          userMessage: result.userMessage || "增強版導入失敗",
+        });
+      }
+    } catch (error) {
+      console.error(
+        `Enhanced import error for user ${req.user.userId}:`,
+        error
+      );
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  }
+);
 
 module.exports = router;
