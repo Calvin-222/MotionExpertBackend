@@ -512,55 +512,73 @@ class MultiUserRAGSystem {
 
   // 📋 用戶所有文檔列表（支援多 Engine，前端與測試專用）
   async getUserDocuments(corpusName) {
-    try {
-      const authClient = await this.auth.getClient();
-      const accessToken = await authClient.getAccessToken();
+  try {
+    const authClient = await this.auth.getClient();
+    const accessToken = await authClient.getAccessToken();
 
-      const filesUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles`;
+    const filesUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles`;
 
-      console.log(`Getting documents from: ${filesUrl}`);
+    console.log(`Getting documents from: ${filesUrl}`);
 
-      const response = await axios.get(filesUrl, {
-        headers: {
-          Authorization: `Bearer ${accessToken.token}`,
-          "Content-Type": "application/json",
-        },
-      });
+    const response = await axios.get(filesUrl, {
+      headers: {
+        Authorization: `Bearer ${accessToken.token}`,
+        "Content-Type": "application/json",
+      },
+    });
 
-      const files = response.data.ragFiles || [];
+    const files = response.data.ragFiles || [];
+    
+    // 🆕 獲取 ragId 以查詢文件名映射
+    const ragId = corpusName.split('/').pop();
+    const fileMapping = await this.getFileNameMapping(ragId);
 
-      const formattedFiles = files.map((file) => {
-        const fileId = file.name.split("/").pop();
-        return {
-          id: fileId,
-          ragFileId: fileId,
-          name: file.displayName || fileId,
-          displayName: file.displayName || fileId,
-          fullName: file.name,
-          createTime: file.createTime,
-          updateTime: file.updateTime,
-          sizeBytes: file.sizeBytes,
-          ragFileType: file.ragFileType,
-        };
-      });
+    const formattedFiles = files.map((file) => {
+      const fileId = file.name.split("/").pop();
+      
+      // 🆕 嘗試從資料庫獲取原始文件名
+      let originalFileName = file.displayName || fileId;
+      
+      if (fileMapping.success && fileMapping.mapping) {
+        // 尋找匹配的 fileid（可能包含在 displayName 或 metadata 中）
+        for (const [mappedFileId, mappedFileName] of Object.entries(fileMapping.mapping)) {
+          if (file.displayName && file.displayName.includes(mappedFileId)) {
+            originalFileName = mappedFileName;
+            break;
+          }
+        }
+      }
 
       return {
-        success: true,
-        files: formattedFiles,
-        totalFiles: formattedFiles.length,
+        id: fileId,
+        ragFileId: fileId,
+        name: originalFileName, // 🆕 顯示原始文件名
+        displayName: originalFileName, // 🆕 顯示原始文件名
+        fullName: file.name,
+        createTime: file.createTime,
+        updateTime: file.updateTime,
+        sizeBytes: file.sizeBytes,
+        ragFileType: file.ragFileType,
       };
-    } catch (error) {
-      console.error(
-        `Error getting documents from ${corpusName}:`,
-        error.message
-      );
-      return {
-        success: false,
-        error: error.message,
-        files: [],
-      };
-    }
+    });
+
+    return {
+      success: true,
+      files: formattedFiles,
+      totalFiles: formattedFiles.length,
+    };
+  } catch (error) {
+    console.error(
+      `Error getting documents from ${corpusName}:`,
+      error.message
+    );
+    return {
+      success: false,
+      error: error.message,
+      files: [],
+    };
   }
+}
 
   // 🗑️ 刪除用戶文檔（改进版 - 使用資料庫權限檢查）
   async deleteUserDocument(userId, ragFileId, ragId = null) {
@@ -644,160 +662,261 @@ class MultiUserRAGSystem {
 
   // 📤 用戶文檔上傳到專屬 RAG（修正版 - 使用資料庫和統一命名）
   async uploadToUserRAG(userId, file, fileName, ragId = null) {
-    try {
-      console.log(
-        `📤 Starting upload process for user ${userId}, file: ${fileName}`
-      );
+  try {
+    console.log(
+      `📤 Starting upload process for user ${userId}, file: ${fileName}`
+    );
 
-      let userEngine = null;
+    let userEngine = null;
 
-      if (ragId) {
-        // 如果指定了 ragId，檢查用戶是否有權限訪問
-        const hasAccess = await this.canUserAccessRAG(userId, ragId);
-        if (!hasAccess) {
-          throw new Error("您沒有權限上傳到此 RAG Engine");
-        }
-
-        const dbInfo = await this.getRAGEngineFromDB(ragId);
-        if (dbInfo) {
-          userEngine = {
-            id: ragId,
-            fullName: `projects/${this.projectId}/locations/${this.location}/ragCorpora/${ragId}`,
-            displayName: userId, // 統一使用 userId 作為 displayName
-            ragName: dbInfo.ragname,
-            userId: dbInfo.userid,
-          };
-        }
-      } else {
-        // 如果沒有指定 ragId，查找用戶的默認 RAG Engine
-        const accessibleRags = await this.getUserAccessibleRAGEngines(userId);
-        if (accessibleRags.success && accessibleRags.ownRags.length > 0) {
-          const defaultRag = accessibleRags.ownRags[0]; // 使用第一個作為默認
-          userEngine = {
-            id: defaultRag.ragid,
-            fullName: `projects/${this.projectId}/locations/${this.location}/ragCorpora/${defaultRag.ragid}`,
-            displayName: userId,
-            ragName: defaultRag.ragname,
-            userId: defaultRag.userid,
-          };
-        }
+    if (ragId) {
+      // 如果指定了 ragId，檢查用戶是否有權限訪問
+      const hasAccess = await this.canUserAccessRAG(userId, ragId);
+      if (!hasAccess) {
+        throw new Error("您沒有權限上傳到此 RAG Engine");
       }
 
-      // 如果沒有找到 Engine，創建一個新的
-      if (!userEngine) {
-        console.log(
-          `No existing RAG Engine found for user ${userId}, creating new one...`
-        );
-        const createResult = await this.createUserRAGEngine(userId);
-
-        if (!createResult.success) {
-          throw new Error(
-            `Failed to create RAG engine for user: ${JSON.stringify(
-              createResult.error
-            )}`
-          );
-        }
-
+      const dbInfo = await this.getRAGEngineFromDB(ragId);
+      if (dbInfo) {
         userEngine = {
-          id: createResult.corpusId,
-          fullName: createResult.corpusName,
-          displayName: createResult.displayName,
-          ragName: createResult.ragName,
-          userId: userId,
+          id: ragId,
+          fullName: `projects/${this.projectId}/locations/${this.location}/ragCorpora/${ragId}`,
+          displayName: userId, // 統一使用 userId 作為 displayName
+          ragName: dbInfo.ragname,
+          userId: dbInfo.userid,
         };
-        console.log(
-          `✅ Created new RAG Engine: ${userEngine.id} for user: ${userId}`
-        );
-      } else {
-        console.log(
-          `✅ Using existing RAG Engine: ${userEngine.id} for user: ${userId}`
-        );
       }
-
-      // 上傳文件到用戶專屬路徑
-      const timestamp = Date.now();
-      const userBucketPath = `user-data/${userId}/${timestamp}-${fileName}`;
-      console.log(`📁 Uploading to bucket path: ${userBucketPath}`);
-
-      const bucket = this.storage.bucket(this.bucketName);
-
-      try {
-        const [bucketExists] = await bucket.exists();
-        if (!bucketExists) {
-          console.log(`Creating bucket: ${this.bucketName}`);
-          await this.storage.createBucket(this.bucketName, {
-            location: this.location,
-            storageClass: "STANDARD",
-          });
-        }
-      } catch (bucketError) {
-        console.error("Bucket check/create error:", bucketError.message);
+    } else {
+      // 如果沒有指定 ragId，查找用戶的默認 RAG Engine
+      const accessibleRags = await this.getUserAccessibleRAGEngines(userId);
+      if (accessibleRags.success && accessibleRags.ownRags.length > 0) {
+        const defaultRag = accessibleRags.ownRags[0]; // 使用第一個作為默認
+        userEngine = {
+          id: defaultRag.ragid,
+          fullName: `projects/${this.projectId}/locations/${this.location}/ragCorpora/${defaultRag.ragid}`,
+          displayName: userId,
+          ragName: defaultRag.ragname,
+          userId: defaultRag.userid,
+        };
       }
+    }
 
-      const bucketFile = bucket.file(userBucketPath);
-      await bucketFile.save(file, {
-        metadata: {
-          contentType: "text/plain",
-          metadata: {
-            userId: userId,
-            originalName: fileName,
-            uploadedAt: new Date().toISOString(),
-            ragEngine: userEngine.id,
-          },
-        },
-      });
-
+    // 如果沒有找到 Engine，創建一個新的
+    if (!userEngine) {
       console.log(
-        `✅ File uploaded to Cloud Storage: gs://${this.bucketName}/${userBucketPath}`
+        `No existing RAG Engine found for user ${userId}, creating new one...`
       );
+      const createResult = await this.createUserRAGEngine(userId);
 
-      // 導入到 RAG Engine
-      console.log(`🔄 Importing file to RAG Engine: ${userEngine.fullName}`);
-
-      if (userEngine.fullName.includes("/operations/")) {
-        console.error(
-          "❌ Invalid corpus name - appears to be an operation name"
-        );
+      if (!createResult.success) {
         throw new Error(
-          "RAG Engine creation may not be complete. Please try again later."
+          `Failed to create RAG engine for user: ${JSON.stringify(
+            createResult.error
+          )}`
         );
       }
 
-      const importResult = await this.importFileToRAG(
-        userEngine.fullName,
-        userBucketPath
+      userEngine = {
+        id: createResult.corpusId,
+        fullName: createResult.corpusName,
+        displayName: createResult.displayName,
+        ragName: createResult.ragName,
+        userId: userId,
+      };
+      console.log(
+        `✅ Created new RAG Engine: ${userEngine.id} for user: ${userId}`
       );
+    } else {
+      console.log(
+        `✅ Using existing RAG Engine: ${userEngine.id} for user: ${userId}`
+      );
+    }
 
-      if (!importResult.success) {
-        console.error("Import to RAG failed:", importResult.error);
+    // 🆕 先保存文件名到資料庫，獲取生成的 fileid
+    let generatedFileId = null;
+    try {
+      const insertFileQuery = `
+        INSERT INTO rag_file_name (ragid, filename) 
+        VALUES (?, ?)
+      `;
+      const [insertResult] = await this.db.execute(insertFileQuery, [
+        userEngine.id,
+        fileName
+      ]);
+
+      // 獲取剛插入的記錄以取得生成的 fileid
+      const getFileQuery = `
+        SELECT fileid FROM rag_file_name 
+        WHERE ragid = ? AND filename = ? 
+        ORDER BY fileid DESC LIMIT 1
+      `;
+      const [fileResults] = await this.db.execute(getFileQuery, [
+        userEngine.id,
+        fileName
+      ]);
+
+      if (fileResults.length > 0) {
+        generatedFileId = fileResults[0].fileid;
+        console.log(`✅ Generated file ID: ${generatedFileId}`);
       } else {
-        console.log(`✅ Import operation started: ${importResult.operationId}`);
+        throw new Error("Failed to get generated file ID");
       }
+    } catch (dbError) {
+      console.error("❌ Database error saving filename:", dbError.message);
+      throw new Error(`Database error: ${dbError.message}`);
+    }
 
+    // 🆕 使用生成的 fileid 作為文件名，保留原始擴展名
+    const fileExtension = fileName.split('.').pop();
+    const newFileName = `${generatedFileId}.${fileExtension}`;
+    
+    // 上傳文件到用戶專屬路徑，使用新的文件名
+    const timestamp = Date.now();
+    const userBucketPath = `user-data/${userId}/${timestamp}-${newFileName}`;
+    console.log(`📁 Uploading to bucket path: ${userBucketPath}`);
+
+    const bucket = this.storage.bucket(this.bucketName);
+
+    try {
+      const [bucketExists] = await bucket.exists();
+      if (!bucketExists) {
+        console.log(`Creating bucket: ${this.bucketName}`);
+        await this.storage.createBucket(this.bucketName, {
+          location: this.location,
+          storageClass: "STANDARD",
+        });
+      }
+    } catch (bucketError) {
+      console.error("Bucket check/create error:", bucketError.message);
+    }
+
+    const bucketFile = bucket.file(userBucketPath);
+    await bucketFile.save(file, {
+      metadata: {
+        contentType: "text/plain",
+        metadata: {
+          userId: userId,
+          originalName: fileName,
+          newFileName: newFileName,
+          generatedFileId: generatedFileId,
+          uploadedAt: new Date().toISOString(),
+          ragEngine: userEngine.id,
+        },
+      },
+    });
+
+    console.log(
+      `✅ File uploaded to Cloud Storage: gs://${this.bucketName}/${userBucketPath}`
+    );
+
+    // 導入到 RAG Engine
+    console.log(`🔄 Importing file to RAG Engine: ${userEngine.fullName}`);
+
+    if (userEngine.fullName.includes("/operations/")) {
+      console.error(
+        "❌ Invalid corpus name - appears to be an operation name"
+      );
+      throw new Error(
+        "RAG Engine creation may not be complete. Please try again later."
+      );
+    }
+
+    const importResult = await this.importFileToRAG(
+      userEngine.fullName,
+      userBucketPath
+    );
+
+    if (!importResult.success) {
+      console.error("Import to RAG failed:", importResult.error);
+    } else {
+      console.log(`✅ Import operation started: ${importResult.operationId}`);
+    }
+
+    return {
+      success: true,
+      userId: userId,
+      fileName: fileName,
+      newFileName: newFileName,
+      generatedFileId: generatedFileId,
+      displayName: fileName, // 顯示原始文件名
+      bucketPath: `gs://${this.bucketName}/${userBucketPath}`,
+      ragEngine: {
+        id: userEngine.id,
+        name: userEngine.fullName,
+        displayName: userEngine.displayName,
+        ragName: userEngine.ragName,
+        fileName: fileName,
+        newFileName: newFileName,
+      },
+      importResult: importResult,
+    };
+  } catch (error) {
+    console.error(`❌ Upload to user RAG error (${userId}):`, error);
+    return {
+      success: false,
+      error: error.message,
+      stack: error.stack,
+    };
+  }
+}
+
+async getFileNameMapping(ragId) {
+  try {
+    const query = `
+      SELECT fileid, filename 
+      FROM rag_file_name 
+      WHERE ragid = ?
+    `;
+    const [results] = await this.db.execute(query, [ragId]);
+    
+    const mapping = {};
+    results.forEach(row => {
+      mapping[row.fileid] = row.filename;
+    });
+    
+    return {
+      success: true,
+      mapping: mapping
+    };
+  } catch (error) {
+    console.error("Error getting file name mapping:", error);
+    return {
+      success: false,
+      error: error.message,
+      mapping: {}
+    };
+  }
+}
+
+// 🆕 根據 fileid 獲取原始文件名
+async getOriginalFileName(ragId, fileId) {
+  try {
+    const query = `
+      SELECT filename 
+      FROM rag_file_name 
+      WHERE ragid = ? AND fileid = ?
+    `;
+    const [results] = await this.db.execute(query, [ragId, fileId]);
+    
+    if (results.length > 0) {
       return {
         success: true,
-        userId: userId,
-        fileName: fileName,
-        displayName: fileName,
-        bucketPath: `gs://${this.bucketName}/${userBucketPath}`,
-        ragEngine: {
-          id: userEngine.id,
-          name: userEngine.fullName,
-          displayName: userEngine.displayName,
-          ragName: userEngine.ragName,
-          fileName: fileName,
-        },
-        importResult: importResult,
+        filename: results[0].filename
       };
-    } catch (error) {
-      console.error(`❌ Upload to user RAG error (${userId}):`, error);
+    } else {
       return {
         success: false,
-        error: error.message,
-        stack: error.stack,
+        error: "File not found"
       };
     }
+  } catch (error) {
+    console.error("Error getting original filename:", error);
+    return {
+      success: false,
+      error: error.message
+    };
   }
+}
 
   // 📤 上傳文件到指定的 RAG Engine
   async uploadFileToEngine(corpusName, userId, fileBuffer, fileName) {
@@ -1492,7 +1611,9 @@ router.post(
           message: `文檔 "${result.displayName}" 已成功上傳到您的個人知識庫`,
           data: {
             userId: result.userId,
-            fileName: result.displayName,
+            fileName: result.displayName, // 原始文件名
+            newFileName: result.newFileName, // 🆕 新生成的文件名
+            generatedFileId: result.generatedFileId, // 🆕 生成的文件ID
             bucketPath: result.bucketPath,
             ragEngine: result.ragEngine,
             operationId: result.importResult?.operationId,
@@ -1518,6 +1639,43 @@ router.post(
     }
   }
 );
+
+router.get("/users/engines/:engineId/file-mapping", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { engineId } = req.params;
+
+    // 檢查用戶權限
+    const hasAccess = await ragSystem.canUserAccessRAG(userId, engineId);
+    if (!hasAccess) {
+      return res.status(403).json({
+        success: false,
+        error: "您沒有權限訪問此 RAG Engine",
+      });
+    }
+
+    const result = await ragSystem.getFileNameMapping(engineId);
+
+    if (result.success) {
+      res.json({
+        success: true,
+        mapping: result.mapping,
+        engineId: engineId,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: result.error,
+      });
+    }
+  } catch (error) {
+    console.error("Get file mapping error:", error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
 
 // 📊 獲取用戶的 RAG Engines - 修正版（使用資料庫）
 router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
