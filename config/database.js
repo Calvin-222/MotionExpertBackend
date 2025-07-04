@@ -4,13 +4,15 @@ const dbConfig = {
   host: process.env.DB_HOST,
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
-  database: process.env.DB_NAME ,
+  database: process.env.DB_NAME,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
   acquireTimeout: 60000,
   timeout: 60000,
   reconnect: true,
+  charset: "utf8mb4",
+  collation: "utf8mb4_unicode_ci",
 };
 
 const pool = mysql.createPool(dbConfig);
@@ -20,9 +22,11 @@ async function testConnection() {
   try {
     const connection = await pool.getConnection();
     console.log("Database connected successfully");
-    const [users] = await connection.execute('SELECT userid, username FROM users LIMIT 1');
-    console.log('[DEBUG] Sample users:', users);
-    
+    const [users] = await connection.execute(
+      "SELECT userid, username FROM users LIMIT 1"
+    );
+    console.log("[DEBUG] Sample users:", users);
+
     connection.release();
     return true;
   } catch (error) {

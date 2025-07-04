@@ -1,0 +1,690 @@
+====================================================================
+                    RAG API 系統完整功能介紹文檔
+====================================================================
+
+系統名稱: MotionExpert 智能 RAG 檢索增強生成系統
+版本: Enhanced Multi-Source RAG v2.0
+更新日期: 2025年1月4日
+技術架構: Node.js + Express + Google Vertex AI + MySQL
+
+====================================================================
+                              目錄
+====================================================================
+
+1. 系統概述
+2. 核心功能模組
+3. API 端點詳細說明
+4. 多數據來源支援
+5. 用戶管理與權限控制
+6. 技術特色與優勢
+7. 已解決的技術挑戰
+8. 使用範例
+9. 部署與配置
+
+====================================================================
+                           1. 系統概述
+====================================================================
+
+MotionExpert RAG 系統是一個企業級的檢索增強生成(Retrieval-Augmented Generation)
+平台，整合了 Google Vertex AI RAG Engine，提供智能文檔處理、多來源數據導入、
+以及先進的自然語言查詢功能。
+
+主要特色:
+• 🌐 多用戶支援，完整權限隔離
+• 📝 完美支援中文檔案名處理
+• 🔄 支援 5 種官方數據來源導入
+• 🚀 全自動分頁處理，無數量限制
+• 🤝 好友分享與協作功能
+• 🛡️ 企業級安全與認證機制
+
+====================================================================
+                         2. 核心功能模組
+====================================================================
+
+2.1 【RAG Engine 管理模組】(engineManagement.js)
+────────────────────────────────────────────────────────────────
+功能描述:
+- 創建、刪除、列出 RAG 語料庫
+- 支援全自動分頁處理 (解決 Google API 25個限制問題)
+- 整合資料庫元數據管理
+- 速率限制保護機制
+
+主要方法:
+• createRAGEngine()        - 創建新的 RAG 語料庫
+• deleteRAGEngine()        - 刪除指定的 RAG 語料庫
+• listAllRAGEngines()      - 列出所有語料庫(支援分頁)
+• waitForOperation()       - 等待操作完成
+
+技術亮點:
+✓ 自動處理 Google API 分頁限制
+✓ 智能重試機制與錯誤處理
+✓ 與資料庫元數據同步
+
+2.2 【檔案操作模組】(fileOperations.js)
+────────────────────────────────────────────────────────────────
+功能描述:
+- 多來源檔案導入處理
+- 中文檔案名完美支援
+- Google Cloud Storage 整合
+- 檔案名映射與追蹤
+
+主要方法:
+• uploadFileToEngine()     - 上傳檔案到指定引擎
+• importFileToRAG()        - 導入檔案到 RAG 系統
+• importFilesToRAG()       - 增強版多來源導入
+• createImportConfig()     - 創建導入配置
+• checkImportOperationStatus() - 檢查導入狀態
+
+支援的數據來源:
+✓ Google Cloud Storage (GCS)
+✓ Google Drive
+✓ Slack 頻道
+✓ Jira 專案
+✓ SharePoint 網站
+
+技術亮點:
+✓ 中文檔案名自動編碼修正
+✓ 檔案名與 ID 雙向映射
+✓ 批量導入處理支援
+
+2.3 【查詢操作模組】(queryOperations.js)
+────────────────────────────────────────────────────────────────
+功能描述:
+- 智能語義查詢處理
+- 多引擎查詢支援
+- 結果排序與過濾
+
+主要方法:
+• queryRAGEngine()         - 執行 RAG 查詢
+• formatQueryResponse()    - 格式化查詢結果
+• extractSources()         - 提取來源資訊
+
+技術亮點:
+✓ 支援複雜語義查詢
+✓ 智能來源追蹤
+✓ 結果相關性排序
+
+2.4 【用戶系統模組】(MultiUserRAGSystem.js)
+────────────────────────────────────────────────────────────────
+功能描述:
+- 多用戶管理與隔離
+- 權限控制機制
+- 好友系統與分享功能
+
+主要方法:
+• createUserRAGEngine()    - 為用戶創建引擎
+• getUserAccessibleRAGEngines() - 獲取用戶可訪問引擎
+• shareRAGEngineToUser()   - 分享引擎給其他用戶
+• addFriend()              - 添加好友
+• canUserAccessRAG()       - 檢查用戶權限
+
+技術亮點:
+✓ 完整的多租戶隔離
+✓ 靈活的權限控制
+✓ 社交分享功能
+
+2.5 【資料庫操作模組】(database.js)
+────────────────────────────────────────────────────────────────
+功能描述:
+- MySQL 資料庫整合
+- 用戶、引擎、檔案元數據管理
+- 關聯表維護
+
+資料表結構:
+• users               - 用戶基本資料
+• rag                 - RAG 引擎元數據
+• rag_file_name       - 檔案名映射表
+• friendship          - 好友關係表
+• private_rag         - 私人分享表
+
+技術亮點:
+✓ UTF8MB4 中文完美支援
+✓ 外鍵約束與級聯刪除
+✓ 事務處理保護
+
+====================================================================
+                         3. API 端點詳細說明
+====================================================================
+
+3.1 【RAG Engine 管理 API】
+────────────────────────────────────────────────────────────────
+
+GET /api/rag/engines/overview?pageSize=100
+描述: 獲取所有 RAG 引擎概覽(支援分頁)
+參數: pageSize (可選) - 分頁大小，預設100
+回應: 
+{
+  "success": true,
+  "totalEngines": 29,
+  "totalPages": 1,
+  "pagination": {...},
+  "engines": [...]
+}
+
+POST /api/rag/users/engines
+描述: 創建新的 RAG 引擎
+認證: 需要 JWT token
+請求體:
+{
+  "engineName": "我的知識庫",
+  "description": "專案文檔知識庫",
+  "visibility": "private"
+}
+
+DELETE /api/rag/users/:userId/engines/:engineId
+描述: 刪除指定的 RAG 引擎
+認證: 需要 JWT token
+權限: 僅引擎擁有者可刪除
+
+3.2 【檔案管理 API】
+────────────────────────────────────────────────────────────────
+
+POST /api/rag/users/:userId/upload
+描述: 上傳檔案到用戶的 RAG 引擎
+認證: 需要 JWT token
+內容類型: multipart/form-data
+檔案限制: 最大 50MB
+特色: 完美支援中文檔案名
+
+POST /api/rag/users/:userId/engines/:engineId/import
+描述: 多來源數據導入(增強版)
+認證: 需要 JWT token
+請求體:
+{
+  "sourceType": "gcs|drive|slack|jira|sharepoint",
+  "sourceConfig": {...},
+  "importResultSink": "..." (可選)
+}
+
+GET /api/rag/users/documents
+描述: 獲取用戶所有文檔列表
+認證: 需要 JWT token
+回應: 包含所有可訪問引擎的文檔
+
+DELETE /api/rag/users/documents/:documentId
+描述: 刪除指定文檔
+認證: 需要 JWT token
+權限: 僅文檔擁有者或引擎擁有者可刪除
+
+3.3 【查詢 API】
+────────────────────────────────────────────────────────────────
+
+POST /api/rag/users/:userId/engines/:engineId/query
+描述: 在指定引擎中執行智能查詢
+認證: 需要 JWT token
+請求體:
+{
+  "question": "請問如何使用 RAG 系統?"
+}
+回應:
+{
+  "success": true,
+  "answer": "根據文檔內容...",
+  "sources": [...],
+  "responseTime": "1.2s"
+}
+
+3.4 【好友與分享 API】
+────────────────────────────────────────────────────────────────
+
+POST /api/rag/users/friends/add
+描述: 添加好友
+認證: 需要 JWT token
+請求體:
+{
+  "friendUsername": "friend_user"
+}
+
+POST /api/rag/users/engines/:engineId/share
+描述: 分享 RAG 引擎給其他用戶
+認證: 需要 JWT token
+請求體:
+{
+  "targetUserId": "target_user_id"
+}
+
+3.5 【操作狀態 API】
+────────────────────────────────────────────────────────────────
+
+GET /api/rag/operation-status/:operationName
+描述: 查詢長時間操作的狀態
+參數: operationName - 完整的操作名稱
+回應:
+{
+  "success": true,
+  "status": "completed|running|failed",
+  "done": true,
+  "result": {...},
+  "recommendations": [...]
+}
+
+====================================================================
+                        4. 多數據來源支援
+====================================================================
+
+4.1 【Google Cloud Storage】
+────────────────────────────────────────────────────────────────
+配置格式:
+{
+  "sourceType": "gcs",
+  "sourceConfig": {
+    "uris": ["gs://bucket/file1.pdf", "gs://bucket/file2.txt"]
+  }
+}
+
+使用場景:
+• 企業文檔庫同步
+• 批量檔案導入
+• 自動化工作流整合
+
+4.2 【Google Drive】
+────────────────────────────────────────────────────────────────
+配置格式:
+{
+  "sourceType": "drive",
+  "sourceConfig": {
+    "resourceIds": ["drive_folder_id", "drive_file_id"]
+  }
+}
+
+使用場景:
+• 團隊協作文檔同步
+• 共享資料夾導入
+• 即時文檔更新
+
+4.3 【Slack 整合】
+────────────────────────────────────────────────────────────────
+配置格式:
+{
+  "sourceType": "slack",
+  "sourceConfig": {
+    "apiKeySecretVersion": "slack_api_key_secret",
+    "channels": [{"channel_id": "C1234567890"}]
+  }
+}
+
+使用場景:
+• 團隊知識庫建立
+• 討論記錄保存
+• 經驗分享整理
+
+4.4 【Jira 專案】
+────────────────────────────────────────────────────────────────
+配置格式:
+{
+  "sourceType": "jira",
+  "sourceConfig": {
+    "projects": ["PROJECT_KEY"],
+    "customQueries": ["project = MyProject"],
+    "email": "user@company.com",
+    "serverUri": "company.atlassian.net",
+    "apiKeySecretVersion": "jira_api_secret"
+  }
+}
+
+使用場景:
+• 需求文檔整理
+• 問題解決方案庫
+• 專案知識管理
+
+4.5 【SharePoint】
+────────────────────────────────────────────────────────────────
+配置格式:
+{
+  "sourceType": "sharepoint",
+  "sourceConfig": {
+    "clientId": "azure_app_client_id",
+    "tenantId": "azure_tenant_id",
+    "siteName": "company.sharepoint.com",
+    "driveName": "Documents",
+    "folderPath": "/Shared Documents",
+    "apiKeySecretVersion": "sharepoint_secret"
+  }
+}
+
+使用場景:
+• 企業文檔中心
+• 政策程序手冊
+• 標準作業流程
+
+====================================================================
+                       5. 用戶管理與權限控制
+====================================================================
+
+5.1 【多租戶架構】
+────────────────────────────────────────────────────────────────
+特色:
+• 完全隔離的用戶數據
+• 獨立的 RAG 引擎空間
+• 安全的權限邊界
+
+實現方式:
+• 資料庫層級隔離
+• API 層級權限檢查
+• 引擎層級訪問控制
+
+5.2 【權限級別】
+────────────────────────────────────────────────────────────────
+擁有者權限:
+• 創建/刪除引擎
+• 上傳/刪除文檔
+• 分享給其他用戶
+• 完整管理權限
+
+被分享者權限:
+• 查詢引擎內容
+• 查看文檔列表
+• 無法修改/刪除
+
+5.3 【好友系統】
+────────────────────────────────────────────────────────────────
+功能:
+• 好友申請與接受
+• 引擎分享機制
+• 協作權限管理
+
+流程:
+1. 用戶A 向用戶B 發送好友申請
+2. 用戶B 接受好友申請
+3. 用戶A 可分享引擎給用戶B
+4. 用戶B 獲得查詢權限
+
+====================================================================
+                       6. 技術特色與優勢
+====================================================================
+
+6.1 【中文支援優化】
+────────────────────────────────────────────────────────────────
+問題: 中文檔案名在 HTTP 傳輸中出現亂碼
+解決方案:
+• 自動檢測編碼問題
+• Latin1 到 UTF8 轉換
+• 檔案名映射機制
+
+技術實現:
+```javascript
+const buffer = Buffer.from(filename, 'latin1');
+const correctedName = buffer.toString('utf8');
+```
+
+6.2 【分頁處理突破】
+────────────────────────────────────────────────────────────────
+問題: Google API 預設只返回 25 個結果
+解決方案:
+• 自動分頁迭代
+• nextPageToken 處理
+• 安全循環保護
+
+效果:
+• 之前: 只能看到 25 個引擎
+• 現在: 完整顯示全部 29 個引擎
+
+6.3 【模組化架構】
+────────────────────────────────────────────────────────────────
+優勢:
+• 代碼分離清晰
+• 功能獨立維護
+• 測試覆蓋完整
+• 擴展性良好
+
+結構:
+```
+routes/rag/
+├── MultiUserRAGSystem.js    # 主系統類
+├── engineManagement.js      # 引擎管理
+├── fileOperations.js        # 檔案操作
+├── queryOperations.js       # 查詢處理
+├── database.js              # 資料庫操作
+└── middleware.js             # 認證中間件
+```
+
+6.4 【錯誤處理機制】
+────────────────────────────────────────────────────────────────
+特色:
+• 分層錯誤處理
+• 用戶友好錯誤信息
+• 詳細日誌記錄
+• 自動重試機制
+
+錯誤分類:
+• 配額超限錯誤 (429)
+• 權限不足錯誤 (403)
+• 資源不存在錯誤 (404)
+• 系統內部錯誤 (500)
+
+====================================================================
+                       7. 已解決的技術挑戰
+====================================================================
+
+7.1 【檔案名編碼問題】✅
+問題描述: 中文檔案名在上傳時出現亂碼
+解決時間: 2025/01/03
+解決方案: 實現自動編碼檢測與修正機制
+
+7.2 【Google API 分頁限制】✅
+問題描述: 只能看到 25 個 RAG 引擎，實際有 29 個
+解決時間: 2025/01/04
+解決方案: 實現完整的分頁迭代處理
+
+7.3 【RAG 引擎重複創建】✅
+問題描述: 每次上傳都創建新引擎，造成資源浪費
+解決時間: 2025/01/03
+解決方案: 智能檢測現有引擎，優先重用
+
+7.4 【檔案名映射機制】✅
+問題描述: 內部檔案ID與原始檔案名無法對應
+解決時間: 2025/01/03
+解決方案: 建立雙向映射資料表
+
+7.5 【多來源導入格式】✅
+問題描述: Google RAG API 格式複雜，支援不完整
+解決時間: 2025/01/04
+解決方案: 根據官方文檔實現完整的 import_rag_files_config
+
+====================================================================
+                           8. 使用範例
+====================================================================
+
+8.1 【基本使用流程】
+────────────────────────────────────────────────────────────────
+
+步驟 1: 用戶註冊與認證
+```bash
+curl -X POST http://localhost:3000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"username": "testuser", "password": "password123"}'
+```
+
+步驟 2: 創建 RAG 引擎
+```bash
+curl -X POST http://localhost:3000/api/rag/users/engines \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"engineName": "我的知識庫", "visibility": "private"}'
+```
+
+步驟 3: 上傳文檔
+```bash
+curl -X POST http://localhost:3000/api/rag/users/USER_ID/upload \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -F "file=@./文檔.pdf"
+```
+
+步驟 4: 執行查詢
+```bash
+curl -X POST http://localhost:3000/api/rag/users/USER_ID/engines/ENGINE_ID/query \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"question": "請問文檔中提到的重點是什麼?"}'
+```
+
+8.2 【多來源導入範例】
+────────────────────────────────────────────────────────────────
+
+從 Google Drive 導入:
+```bash
+curl -X POST http://localhost:3000/api/rag/users/USER_ID/engines/ENGINE_ID/import \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sourceType": "drive",
+    "sourceConfig": {
+      "resourceIds": ["1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms"]
+    }
+  }'
+```
+
+從 Slack 導入:
+```bash
+curl -X POST http://localhost:3000/api/rag/users/USER_ID/engines/ENGINE_ID/import \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sourceType": "slack",
+    "sourceConfig": {
+      "apiKeySecretVersion": "projects/PROJECT/secrets/slack-api-key/versions/1",
+      "channels": [{"channel_id": "C1234567890"}]
+    }
+  }'
+```
+
+8.3 【好友分享範例】
+────────────────────────────────────────────────────────────────
+
+添加好友:
+```bash
+curl -X POST http://localhost:3000/api/rag/users/friends/add \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"friendUsername": "colleague_user"}'
+```
+
+分享引擎:
+```bash
+curl -X POST http://localhost:3000/api/rag/users/engines/ENGINE_ID/share \
+  -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"targetUserId": "friend_user_id"}'
+```
+
+====================================================================
+                          9. 部署與配置
+====================================================================
+
+9.1 【環境要求】
+────────────────────────────────────────────────────────────────
+• Node.js 18+ 
+• MySQL 8.0+
+• Google Cloud Project (已啟用 Vertex AI API)
+• Google Cloud Storage Bucket
+
+9.2 【必要配置檔案】
+────────────────────────────────────────────────────────────────
+
+.env 檔案:
+```
+GOOGLE_APPLICATION_CREDENTIALS=./service-account-key.json
+GOOGLE_CLOUD_PROJECT=your-project-id
+MYSQL_HOST=localhost
+MYSQL_USER=root
+MYSQL_PASSWORD=your-password
+MYSQL_DATABASE=rag_system
+JWT_SECRET=your-secret-key
+```
+
+service-account-key.json:
+• 從 Google Cloud Console 下載的服務帳戶金鑰
+• 需要 Vertex AI API 和 Cloud Storage 權限
+
+9.3 【資料庫初始化】
+────────────────────────────────────────────────────────────────
+```sql
+CREATE DATABASE rag_system CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+
+CREATE TABLE users (
+  userid VARCHAR(255) PRIMARY KEY,
+  username VARCHAR(255) UNIQUE NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE rag (
+  ragid VARCHAR(255) PRIMARY KEY,
+  ragname VARCHAR(255) NOT NULL,
+  userid VARCHAR(255) NOT NULL,
+  visibility ENUM('private', 'public', 'friends') DEFAULT 'private',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (userid) REFERENCES users(userid) ON DELETE CASCADE
+);
+
+-- 其他資料表...
+```
+
+9.4 【啟動服務】
+────────────────────────────────────────────────────────────────
+```bash
+# 安裝依賴
+npm install
+
+# 啟動服務
+npm start
+
+# 服務將在 http://localhost:3000 運行
+```
+
+====================================================================
+                           10. 監控與維護
+====================================================================
+
+10.1 【日誌監控】
+────────────────────────────────────────────────────────────────
+• 所有 API 請求都有詳細日誌
+• 錯誤追蹤與堆疊資訊
+• 操作時間統計
+• 使用量分析
+
+10.2 【效能監控】
+────────────────────────────────────────────────────────────────
+重要指標:
+• API 回應時間
+• 檔案上傳速度
+• 查詢處理時間
+• 資料庫連接狀態
+
+10.3 【定期維護】
+────────────────────────────────────────────────────────────────
+建議任務:
+• 清理過期操作記錄
+• 備份重要用戶數據
+• 更新 Google API 依賴
+• 檢查資料庫效能
+
+====================================================================
+                             總結
+====================================================================
+
+MotionExpert RAG 系統是一個功能完整、技術先進的企業級智能檢索平台。
+系統具備以下核心優勢:
+
+✅ 完全支援中文檔案名與內容
+✅ 無縫整合 Google Vertex AI RAG Engine
+✅ 支援 5 種主流數據來源導入
+✅ 完整的多用戶權限管理
+✅ 模組化架構便於維護擴展
+✅ 解決了多個關鍵技術挑戰
+
+系統已準備好用於生產環境，能夠為企業提供強大的智能知識管理能力。
+
+====================================================================
+                        技術支援與文檔
+====================================================================
+
+如需進一步技術支援或功能擴展，請參考:
+• 系統源碼: /routes/rag/ 模組
+• API 文檔: RAG_API_STATUS_REPORT.md  
+• 測試報告: CHINESE_UPLOAD_TEST_REPORT.md
+
+聯絡資訊: 開發團隊
+最後更新: 2025年1月4日
+
+====================================================================
