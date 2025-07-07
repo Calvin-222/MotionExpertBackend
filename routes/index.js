@@ -3,6 +3,7 @@ var router = express.Router();
 const { pool } = require("../config/database");
 const { VertexAI } = require("@google-cloud/vertexai");
 const jwt = require('jsonwebtoken');
+
 // Initialize Vertex AI
 const vertexAI = new VertexAI({
   project: process.env.GOOGLE_CLOUD_PROJECT,
@@ -358,6 +359,16 @@ router.get("/api/model-info", function (req, res, next) {
 router.get('/api/search-users', async (req, res) => {
   try {
     const searchTerm = req.query.search || '';
+
+    if (!searchTerm || searchTerm.trim().length < 3) {
+      return res.json({
+        success: true,
+        users: [],
+        count: 0,
+        message: ''
+      });
+    }
+    //if(searchTerm == username){}
     
     let query = 'SELECT username FROM users';
     let queryParams = [];

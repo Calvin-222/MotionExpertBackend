@@ -5,15 +5,14 @@ const { Storage } = require("@google-cloud/storage");
 
 // 資料庫配置
 const dbConfig = {
-  host: process.env.DB_HOST || "localhost",
-  user: process.env.DB_USER || "root",
-  password: process.env.DB_PASSWORD || "",
-  database: process.env.DB_NAME || "user_info",
+  host: process.env.DB_HOST,
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
   waitForConnections: true,
   connectionLimit: 10,
   queueLimit: 0,
   charset: "utf8mb4",
-  collation: "utf8mb4_unicode_ci",
 };
 
 // 創建資料庫連接池
