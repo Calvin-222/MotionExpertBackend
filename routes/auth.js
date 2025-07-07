@@ -5,6 +5,7 @@ const router = express.Router();
 const { pool }= require("../config/database");
 const ratelimit = require("express-rate-limit");
 const validator = require("validator");
+const crypto = require("crypto");
 
 // Rate limiting middleware
 const limiter = ratelimit({
@@ -38,10 +39,9 @@ const validateInput = (req, res, next) => {
       message: "Invalid characters in username",
     });
   }
-
+ 
   // Sanitize inputs
   req.body.username = validator.escape(username.trim());
-  req.body.password = password; // Don't sanitize password, just validate length
 
   next();
 };
@@ -74,9 +74,13 @@ router.post("/login", limiter, validateInput, async (req, res) => {
     }
 
     const token = jwt.sign(
-      { userId: user.userid, username: user.username },
+      { 
+        userId: user.userid, 
+        username: user.username,
+        sessionId: crypto.randomUUID() // Makes each token unique
+      },
       process.env.JWT_SECRET,
-      { expiresIn: "24h" } //
+      { expiresIn: "24h" }
     );
 
     res.json({
@@ -154,7 +158,6 @@ router.post("/register", limiter, validateInput, async (req, res) => {
       process.env.JWT_SECRET,
       { expiresIn: "24h" } // 修正：改為 24 小時
     );
-
     res.json({
       success: true,
       message: "Registration successful",
