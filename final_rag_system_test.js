@@ -139,12 +139,12 @@ class RagSystemTester {
         
         const testFiles = [
             {
-                name: 'test_document.txt',
-                content: '這是一個測試文檔，內容關於法國。法國的首都是巴黎。巴黎是一個美麗的城市，有許多著名的地標，如艾菲爾鐵塔、羅浮宮和聖母院。法國以其美食、美酒和豐富的文化遺產而聞名。'
+                name: 'france_info.txt',
+                content: '法國相關資料：法國的首都是巴黎。巴黎是法國最大的城市。艾菲爾鐵塔位於巴黎市中心。法國是歐洲國家，以美食和葡萄酒著名。羅浮宮博物館也在巴黎。'
             },
             {
-                name: 'tech_document.txt',
-                content: '這是一個技術文檔。Node.js 是一個基於 Chrome V8 JavaScript 引擎的 JavaScript 運行時。它使用事件驅動的非阻塞 I/O 模型，使其輕量且高效。Node.js 非常適合構建可擴展的網絡應用程序。'
+                name: 'nodejs_tech.txt', 
+                content: 'Node.js 技術文檔：Node.js 是一個基於 Chrome V8 JavaScript 引擎的 JavaScript 運行時。Node.js 使用事件驅動、非阻塞 I/O 模型，使其輕量又高效。Node.js 的包管理器 npm 是世界上最大的開源庫生態系統。'
             }
         ];
         
@@ -172,6 +172,12 @@ class RagSystemTester {
             }
             
             log(colors.blue, `文件上傳成功 - ${fileData.name}`);
+            
+            // 在每個文件上傳之間等待 3 秒，避免競爭條件
+            if (testFiles.indexOf(fileData) < testFiles.length - 1) {
+                log(colors.yellow, '⏳ 等待 3 秒再上傳下一個文件...');
+                await sleep(3000);
+            }
         }
         
         log(colors.blue, `所有文件上傳成功 - 共 ${testFiles.length} 個文件`);
