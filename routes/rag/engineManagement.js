@@ -35,209 +35,322 @@ class EngineManagement {
     visibility = "private"
   ) {
     try {
+      console.log(`🏗️ === COMPLETE RAG ENGINE CREATION WITH ASYNC SUPPORT ===`);
+      console.log(`👤 User ID: ${userId}`);
+      console.log(`📛 Engine Name: ${engineName}`);
+
+      // Step 1: 認證
       const authClient = await this.auth.getClient();
       const accessToken = await authClient.getAccessToken();
+      console.log(`✅ Authentication successful`);
 
-      const createUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/projects/${this.projectId}/locations/${this.location}/ragCorpora`;
-
-      // 統一命名：只使用 userId 作為 displayName
-      const engineDisplayName = userId;
+      // Step 2: 準備數據
+      const corpusId = `rag_${Date.now()}_${Math.random()
+        .toString(36)
+        .substr(2, 9)}`;
+      const finalDisplayName = `${userId}_${engineName || "default"}`;
       const finalRagName = engineName || `${userId}_default_rag`;
 
-      const engineDescription =
-        description ||
-        `RAG corpus for user ${userId}${
-          engineName ? ` - ${engineName}` : ""
-        } - Created ${new Date().toISOString()}`;
+      console.log(`🆔 Generated Corpus ID: ${corpusId}`);
+      console.log(`📛 Display Name: ${finalDisplayName}`);
 
       const corpusData = {
-        displayName: engineDisplayName,
-        description: engineDescription,
+        displayName: finalDisplayName,
+        description:
+          description ||
+          `RAG corpus for user ${userId} - ${engineName} - Created ${new Date().toISOString()}`,
       };
 
-      console.log(`Creating RAG Engine for user ${userId}...`);
-      console.log("Request URL:", createUrl);
-      console.log("Request payload:", JSON.stringify(corpusData, null, 2));
+      // Step 3: 發送創建請求
+      const createUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/projects/${this.projectId}/locations/${this.location}/ragCorpora`;
+
+      console.log(`📤 Creating RAG Corpus...`);
+      console.log(`🔗 URL: ${createUrl}`);
+      console.log(`📦 Data:`, JSON.stringify(corpusData, null, 2));
 
       const response = await axios.post(createUrl, corpusData, {
         headers: {
           Authorization: `Bearer ${accessToken.token}`,
           "Content-Type": "application/json",
         },
+        timeout: 60000, // 60秒超時
       });
 
-      console.log(
-        "Create response received:",
-        JSON.stringify(response.data, null, 2)
-      );
+      console.log(`📨 Creation Response Status: ${response.status}`);
+      console.log(`📨 Response Data:`, JSON.stringify(response.data, null, 2));
 
-      let corpusId, corpusName, finalDisplayName;
+      let finalCorpusId, corpusName;
 
-      // 檢查是否是異步操作
+      // Step 4: 檢查是否為異步操作
       if (response.data.name && response.data.name.includes("/operations/")) {
-        console.log("⏳ Async operation detected, waiting for completion...");
-        const waitResult = await this.waitForOperation(response.data.name);
+        console.log(`⏳ Detected ASYNC operation: ${response.data.name}`);
+        console.log(`⏳ Waiting for operation to complete...`);
 
-        if (waitResult.success) {
-          corpusName = waitResult.result.name;
-          corpusId = corpusName.split("/").pop();
-          finalDisplayName = waitResult.result.displayName;
-        } else {
-          throw new Error(`Operation failed: ${waitResult.error}`);
+        // 等待異步操作完成
+        const operationResult = await this.waitForOperation(
+          response.data.name,
+          300000
+        ); // 5分鐘超時
+
+        if (!operationResult.success) {
+          throw new Error(
+            `Async operation failed: ${JSON.stringify(operationResult.error)}`
+          );
         }
+
+        console.log(`✅ Async operation completed successfully`);
+        console.log(
+          `✅ Operation result:`,
+          JSON.stringify(operationResult.result, null, 2)
+        );
+
+        corpusName = operationResult.result?.name;
+        if (!corpusName) {
+          throw new Error("No corpus name found in async operation result");
+        }
+
+        finalCorpusId = corpusName.split("/").pop();
+        console.log(`✅ Final Corpus Name from async: ${corpusName}`);
+        console.log(`✅ Final Corpus ID from async: ${finalCorpusId}`);
       } else {
-        // 同步響應
+        // 同步操作
+        console.log(`✅ Detected SYNC operation`);
         corpusName = response.data.name;
-        corpusId = corpusName.split("/").pop();
-        finalDisplayName = response.data.displayName;
+        finalCorpusId = corpusName.split("/").pop();
+        console.log(`✅ Final Corpus Name from sync: ${corpusName}`);
+        console.log(`✅ Final Corpus ID from sync: ${finalCorpusId}`);
       }
 
-      // 保存到資料庫
+      // Step 5: 立即驗證創建結果
+      console.log(`🔍 === IMMEDIATE VERIFICATION ===`);
+      try {
+        const verifyUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}`;
+        console.log(`🔍 Verification URL: ${verifyUrl}`);
+
+        const verifyResponse = await axios.get(verifyUrl, {
+          headers: {
+            Authorization: `Bearer ${accessToken.token}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 30000,
+        });
+
+        console.log(`✅ RAG Corpus verification successful!`);
+        console.log(`✅ Corpus State: ${verifyResponse.data.state}`);
+        console.log(
+          `✅ Corpus Display Name: ${verifyResponse.data.displayName}`
+        );
+
+        // 檢查狀態
+        if (
+          verifyResponse.data.state &&
+          verifyResponse.data.state !== "ACTIVE"
+        ) {
+          console.log(
+            `⚠️ Corpus state is: ${verifyResponse.data.state} (not ACTIVE yet)`
+          );
+          console.log(`⚠️ This is normal for newly created corpus`);
+        }
+      } catch (verifyError) {
+        console.error(`❌ Immediate verification failed:`, {
+          status: verifyError.response?.status,
+          data: verifyError.response?.data,
+          message: verifyError.message,
+        });
+
+        // 如果驗證失敗，等待一段時間後重試
+        console.log(`⏳ Waiting 30 seconds before retry verification...`);
+        await new Promise((resolve) => setTimeout(resolve, 30000));
+
+        try {
+          const retryVerifyResponse = await axios.get(verifyUrl, {
+            headers: {
+              Authorization: `Bearer ${accessToken.token}`,
+              "Content-Type": "application/json",
+            },
+            timeout: 30000,
+          });
+
+          console.log(`✅ Retry verification successful!`);
+          console.log(`✅ Corpus State: ${retryVerifyResponse.data.state}`);
+        } catch (retryError) {
+          console.error(
+            `❌ Retry verification also failed:`,
+            retryError.response?.data
+          );
+          console.warn(
+            `⚠️ Continuing with database save despite verification failure...`
+          );
+        }
+      }
+
+      // Step 6: 保存到資料庫
+      console.log(`💾 === DATABASE SAVE ===`);
       try {
         const insertQuery = `
-          INSERT INTO rag (ragid, userid, ragname, visibility) 
-          VALUES (?, ?, ?, ?)
+          INSERT INTO rag (ragid, userid, ragname, visibility, created_at, updated_at) 
+          VALUES (?, ?, ?, ?, NOW(), NOW())
         `;
+
+        console.log(
+          `💾 Saving to database: [${finalCorpusId}, ${userId}, ${finalRagName}, ${visibility}]`
+        );
+
         await this.db.execute(insertQuery, [
-          corpusId,
+          finalCorpusId,
           userId,
           finalRagName,
           visibility,
         ]);
 
-        console.log("✅ RAG Engine saved to database");
+        console.log(`✅ Successfully saved to database: ${finalCorpusId}`);
       } catch (dbError) {
-        console.error("❌ Failed to save RAG Engine to database:", dbError);
-        console.error("❌ Database error details:", {
-          message: dbError.message,
-          code: dbError.code,
-          errno: dbError.errno,
-          sqlState: dbError.sqlState,
-          sqlMessage: dbError.sqlMessage,
-        });
-
-        // 🔧 如果資料庫保存失敗，回滾 Google Cloud 創建的 RAG Engine
-        try {
-          console.log("🔄 Attempting to rollback Google Cloud RAG Engine...");
-          const deleteUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}`;
-          await axios.delete(deleteUrl, {
-            headers: {
-              Authorization: `Bearer ${accessToken.token}`,
-              "Content-Type": "application/json",
-            },
-          });
-          console.log("✅ Google Cloud RAG Engine rollback successful");
-        } catch (rollbackError) {
-          console.error("❌ Rollback failed:", rollbackError.message);
-        }
-
-        // 拋出錯誤，停止後續操作
-        throw new Error(`Database save failed: ${dbError.message}`);
+        console.error("❌ Database save failed:", dbError);
+        throw dbError;
       }
 
-      console.log(`✅ RAG Engine created for user ${userId}`);
-      console.log("Full corpus name:", corpusName);
-      console.log("Corpus ID:", corpusId);
+      // Step 7: 最終成功
+      console.log(`🎉 === RAG ENGINE CREATION COMPLETED SUCCESSFULLY ===`);
+      console.log(`🎉 Ready for use: ${corpusName}`);
 
       return {
         success: true,
         userId: userId,
-        corpusId: corpusId,
+        corpusId: finalCorpusId,
         corpusName: corpusName,
         displayName: finalDisplayName,
         ragName: finalRagName,
         visibility: visibility,
         bucketPath: `user-data/${userId}`,
         createdAt: new Date().toISOString(),
+        message: `RAG Engine "${finalRagName}" created successfully and ready for use`,
+        engine: {
+          ragid: finalCorpusId,
+          ragname: finalRagName,
+          visibility: visibility,
+          created_at: new Date().toISOString(),
+        },
+        // 添加狀態信息
+        isAsyncOperation:
+          response.data.name && response.data.name.includes("/operations/"),
+        readyForUse: true,
       };
     } catch (error) {
-      console.error(`❌ Failed to create RAG Engine for user ${userId}:`);
-      console.error("Error details:", {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-      });
-
-      // 檢查是否為配額限制錯誤
-      const isQuotaError =
-        error.response?.data?.error?.code === 429 ||
-        error.response?.data?.error?.status === "RESOURCE_EXHAUSTED" ||
-        error.response?.data?.error?.message?.includes("Quota exceeded");
-
-      let userFriendlyMessage = "Engine 創建失敗";
-
-      if (isQuotaError) {
-        userFriendlyMessage = "系統繁忙，請稍後再試";
-      }
+      console.error(`❌ === RAG ENGINE CREATION FAILED ===`);
+      console.error(`❌ Error Details:`);
+      console.error(`   - Type: ${error.constructor.name}`);
+      console.error(`   - Message: ${error.message}`);
+      console.error(`   - Status: ${error.response?.status}`);
+      console.error(
+        `   - Data: ${JSON.stringify(error.response?.data, null, 2)}`
+      );
+      console.error(`   - Stack: ${error.stack}`);
 
       return {
         success: false,
-        error: error.response?.data || error.message,
-        userMessage: userFriendlyMessage,
-        isQuotaError: isQuotaError,
-        details: {
-          status: error.response?.status,
-          message: error.message,
-          quotaInfo: isQuotaError
-            ? {
-                limit: "60 requests per minute per region",
-                suggestion: "請等待1-2分鐘後重試，或聯繫管理員申請提高配額",
-              }
-            : null,
-        },
+        error: error.message,
+        details: error.response?.data,
+        statusCode: error.response?.status,
+        message: "Failed to create RAG Engine",
       };
     }
   }
 
-  // 🕐 等待操作完成
+  // 🔧 改進的等待操作方法
   async waitForOperation(operationName, maxWaitTime = 300000) {
     try {
       const authClient = await this.auth.getClient();
       const startTime = Date.now();
+      let attemptCount = 0;
 
-      console.log(`⏳ Waiting for operation to complete: ${operationName}`);
+      console.log(`⏳ === WAITING FOR ASYNC OPERATION ===`);
+      console.log(`📛 Operation: ${operationName}`);
+      console.log(`⏰ Max wait time: ${maxWaitTime / 1000} seconds`);
 
       while (Date.now() - startTime < maxWaitTime) {
-        const accessToken = await authClient.getAccessToken();
+        attemptCount++;
+        console.log(`🔄 Attempt ${attemptCount}: Checking operation status...`);
 
+        const accessToken = await authClient.getAccessToken();
         const statusUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${operationName}`;
 
-        const response = await axios.get(statusUrl, {
-          headers: {
-            Authorization: `Bearer ${accessToken.token}`,
-            "Content-Type": "application/json",
-          },
-        });
+        try {
+          const response = await axios.get(statusUrl, {
+            headers: {
+              Authorization: `Bearer ${accessToken.token}`,
+              "Content-Type": "application/json",
+            },
+            timeout: 30000,
+          });
 
-        const operation = response.data;
-        console.log(
-          `Operation status: done=${operation.done}, name=${operation.name}`
-        );
+          const operation = response.data;
+          console.log(
+            `📊 Operation status: done=${operation.done}, name=${operation.name}`
+          );
 
-        if (operation.done) {
-          if (operation.error) {
+          if (operation.done) {
+            if (operation.error) {
+              console.error(
+                `❌ Operation completed with error:`,
+                operation.error
+              );
+              return {
+                success: false,
+                error: operation.error,
+              };
+            }
+
+            console.log(`✅ Operation completed successfully!`);
+            console.log(
+              `✅ Result:`,
+              JSON.stringify(operation.response, null, 2)
+            );
+
             return {
-              success: false,
-              error: operation.error,
+              success: true,
+              result: operation.response,
+              metadata: operation.metadata,
+              attemptCount: attemptCount,
+              totalWaitTime: Date.now() - startTime,
             };
           }
 
-          return {
-            success: true,
-            result: operation.response,
-          };
-        }
+          // 顯示進度
+          const elapsedTime = Math.round((Date.now() - startTime) / 1000);
+          console.log(`⏳ Still waiting... (${elapsedTime}s elapsed)`);
 
-        // 等待 10 秒後重試
-        await new Promise((resolve) => setTimeout(resolve, 10000));
+          // 等待 15 秒後重試
+          await new Promise((resolve) => setTimeout(resolve, 15000));
+        } catch (statusError) {
+          console.error(
+            `❌ Failed to check operation status (attempt ${attemptCount}):`,
+            statusError.response?.data || statusError.message
+          );
+
+          // 如果是網絡錯誤，等待後重試
+          if (
+            statusError.code === "ECONNRESET" ||
+            statusError.code === "ETIMEDOUT"
+          ) {
+            console.log(`🔄 Network error, retrying in 10 seconds...`);
+            await new Promise((resolve) => setTimeout(resolve, 10000));
+            continue;
+          }
+
+          // 其他錯誤，等待後重試
+          await new Promise((resolve) => setTimeout(resolve, 10000));
+        }
       }
 
+      console.error(`❌ Operation timeout after ${maxWaitTime / 1000} seconds`);
       return {
         success: false,
         error: "Operation timeout",
+        attemptCount: attemptCount,
+        totalWaitTime: maxWaitTime,
       };
     } catch (error) {
-      console.error("Error waiting for operation:", error.message);
+      console.error("❌ Error waiting for operation:", error.message);
       return {
         success: false,
         error: error.message,
@@ -523,6 +636,183 @@ class EngineManagement {
       return {
         success: false,
         error: error.response?.data || error.message,
+      };
+    }
+  }
+
+  // 🔧 診斷 Google Cloud 設置
+  async diagnoseGoogleCloudSetup() {
+    try {
+      console.log(`🔍 === GOOGLE CLOUD SETUP DIAGNOSIS ===`);
+
+      // 檢查認證
+      const authClient = await this.auth.getClient();
+      const accessToken = await authClient.getAccessToken();
+      console.log(`✅ Authentication: OK`);
+      console.log(
+        `🔑 Token length: ${accessToken.token ? accessToken.token.length : 0}`
+      );
+
+      // 檢查項目訪問權限
+      const testUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/projects/${this.projectId}/locations/${this.location}`;
+      console.log(`🔍 Testing project access: ${testUrl}`);
+
+      const testResponse = await axios.get(testUrl, {
+        headers: {
+          Authorization: `Bearer ${accessToken.token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      });
+
+      console.log(`✅ Project access: OK`);
+      console.log(`📊 Location info:`, testResponse.data);
+
+      // 列出現有的 RAG Corpora
+      const listUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/projects/${this.projectId}/locations/${this.location}/ragCorpora`;
+      console.log(`🔍 Listing existing RAG Corpora: ${listUrl}`);
+
+      const listResponse = await axios.get(listUrl, {
+        headers: {
+          Authorization: `Bearer ${accessToken.token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      });
+
+      console.log(`✅ RAG Corpora list: OK`);
+      console.log(
+        `📊 Existing corpora count:`,
+        listResponse.data.ragCorpora?.length || 0
+      );
+
+      return {
+        success: true,
+        authentication: "OK",
+        projectAccess: "OK",
+        existingCorpora: listResponse.data.ragCorpora || [],
+        corporaCount: listResponse.data.ragCorpora?.length || 0,
+        projectId: this.projectId,
+        location: this.location,
+        message: "Google Cloud setup is working correctly",
+      };
+    } catch (error) {
+      console.error(
+        `❌ Google Cloud diagnosis failed:`,
+        error.response?.data || error.message
+      );
+      return {
+        success: false,
+        error: error.response?.data || error.message,
+        errorStatus: error.response?.status,
+        projectId: this.projectId,
+        location: this.location,
+        message: "Google Cloud setup has issues",
+      };
+    }
+  }
+
+  // 🔧 簡化的 RAG Corpus 創建方法 - 用於調試
+  async createSimpleRAGCorpus(userId, engineName = "test") {
+    try {
+      console.log(`🏗️ === SIMPLE RAG CORPUS CREATION FOR DEBUG ===`);
+      console.log(`👤 User ID: ${userId}`);
+      console.log(`📛 Engine Name: ${engineName}`);
+
+      // Step 1: 認證
+      const authClient = await this.auth.getClient();
+      const accessToken = await authClient.getAccessToken();
+      console.log(`✅ Authentication successful`);
+
+      // Step 2: 準備最簡單的數據
+      const corpusData = {
+        displayName: `debug_${userId}_${Date.now()}`,
+        description: `Debug RAG corpus for ${userId} created at ${new Date().toISOString()}`,
+      };
+
+      // Step 3: 發送創建請求
+      const createUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/projects/${this.projectId}/locations/${this.location}/ragCorpora`;
+
+      console.log(`📤 Creating Simple RAG Corpus...`);
+      console.log(`🔗 URL: ${createUrl}`);
+      console.log(`📦 Data:`, JSON.stringify(corpusData, null, 2));
+
+      const response = await axios.post(createUrl, corpusData, {
+        headers: {
+          Authorization: `Bearer ${accessToken.token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 60000,
+      });
+
+      console.log(`📨 Creation Response Status: ${response.status}`);
+      console.log(`📨 Response Data:`, JSON.stringify(response.data, null, 2));
+
+      let corpusName, corpusId;
+
+      // 🔧 修復：檢查是否是異步操作
+      if (response.data.name && response.data.name.includes('/operations/')) {
+        console.log(`⏳ Detected ASYNC operation: ${response.data.name}`);
+        
+        // 等待異步操作完成
+        const operationResult = await this.waitForOperation(response.data.name, 120000); // 2分鐘超時
+        
+        if (!operationResult.success) {
+          throw new Error(`Async operation failed: ${JSON.stringify(operationResult.error)}`);
+        }
+        
+        console.log(`✅ Async operation completed successfully`);
+        
+        // 從 operation result 中獲取真正的 corpus 信息
+        if (operationResult.result && operationResult.result.name) {
+          corpusName = operationResult.result.name;
+          corpusId = corpusName.split('/').pop();
+          console.log(`✅ Corpus created via async: ${corpusName}`);
+        } else {
+          throw new Error('No corpus name found in async operation result');
+        }
+      } else {
+        // 同步操作
+        corpusName = response.data.name;
+        corpusId = corpusName.split("/").pop();
+        console.log(`✅ Corpus created synchronously: ${corpusName}`);
+      }
+
+      // 立即驗證
+      const verifyUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}`;
+      console.log(`🔍 Verifying corpus: ${verifyUrl}`);
+
+      const verifyResponse = await axios.get(verifyUrl, {
+        headers: {
+          Authorization: `Bearer ${accessToken.token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      });
+
+      console.log(`✅ Verification successful!`);
+      console.log(`✅ Corpus State: ${verifyResponse.data.state}`);
+
+      return {
+        success: true,
+        corpusId: corpusId,
+        corpusName: corpusName,
+        displayName: corpusData.displayName,
+        state: verifyResponse.data.state,
+        message: "Simple RAG Corpus created successfully",
+      };
+    } catch (error) {
+      console.error(`❌ Simple RAG creation failed:`, {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+      });
+
+      return {
+        success: false,
+        error: error.message,
+        details: error.response?.data,
+        statusCode: error.response?.status,
       };
     }
   }

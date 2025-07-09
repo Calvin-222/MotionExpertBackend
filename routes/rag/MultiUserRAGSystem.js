@@ -1,167 +1,265 @@
-const DatabaseOperations = require("./database");
 const FileOperations = require("./fileOperations");
 const QueryOperations = require("./queryOperations");
 const EngineManagement = require("./engineManagement");
+// 🔧 修正路徑 - 從 config 目錄引入資料庫連接
+const { pool } = require("../../config/database");
 
 class MultiUserRAGSystem {
   constructor() {
-    // 初始化各個操作模組
-    this.database = new DatabaseOperations();
     this.fileOps = new FileOperations();
     this.queryOps = new QueryOperations();
     this.engineMgmt = new EngineManagement();
+    this.pool = pool; // 直接使用資料庫連接池
   }
 
-  // === 資料庫操作方法 ===
-  async getUserAccessibleRAGEngines(userId) {
-    return await this.database.getUserAccessibleRAGEngines(userId);
+  // 🔧 添加缺失的方法：獲取用戶的 RAG engines
+  async getUserRAGEngines(userId) {
+    try {
+      console.log(`📊 Getting RAG engines for user: ${userId}`);
+
+      const query = `
+        SELECT ragid, ragname, visibility, created_at, updated_at 
+        FROM rag 
+        WHERE userid = ? 
+        ORDER BY created_at DESC
+      `;
+
+      const [results] = await this.pool.execute(query, [userId]);
+
+      return results || [];
+    } catch (error) {
+      console.error("Error getting user RAG engines:", error);
+      return [];
+    }
   }
 
+  // 🔧 修正：創建用戶 RAG engine - 使用真正的 Google Cloud corpus 創建
+  async createUserRAGEngine(userId, engineName, description = "") {
+    try {
+      console.log(`🏗️ Creating RAG engine for user ${userId}: ${engineName}`);
+
+      // 使用 EngineManagement 創建真正的 Google Cloud RAG Corpus
+      const result = await this.engineMgmt.createUserRAGEngine(
+        userId,
+        engineName,
+        description
+      );
+
+      if (result.success) {
+        return {
+          success: true,
+          message: result.message,
+          engine: {
+            ragid: result.corpusId, // 重要：使用真正的 corpus ID
+            id: result.corpusId,
+            name: result.ragName,
+            displayName: result.displayName,
+            ragName: result.ragName,
+            visibility: result.visibility,
+            description: description,
+            createdAt: result.createdAt,
+            corpusName: result.corpusName, // 添加 corpus 名稱供調試
+          },
+          // 保持向後兼容
+          engineId: result.corpusId,
+        };
+      } else {
+        return {
+          success: false,
+          error: result.error,
+        };
+      }
+    } catch (error) {
+      console.error("Error creating RAG engine:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  // 🔧 檢查用戶是否可以訪問 RAG
   async canUserAccessRAG(userId, ragId) {
-    return await this.database.canUserAccessRAG(userId, ragId);
+    try {
+      const query = `
+        SELECT COUNT(*) as count 
+        FROM rag 
+        WHERE ragid = ? AND userid = ?
+      `;
+
+      const [results] = await this.pool.execute(query, [ragId, userId]);
+
+      return results[0].count > 0;
+    } catch (error) {
+      console.error("Error checking RAG access:", error);
+      return false;
+    }
   }
 
+  // 🔧 從資料庫獲取 RAG Engine
   async getRAGEngineFromDB(ragId) {
-    return await this.database.getRAGEngineFromDB(ragId);
+    try {
+      const query = `
+        SELECT r.*, u.username 
+        FROM rag r 
+        JOIN users u ON r.userid = u.userid 
+        WHERE r.ragid = ?
+      `;
+
+      const [results] = await this.pool.execute(query, [ragId]);
+
+      if (results.length > 0) {
+        return {
+          success: true,
+          ragEngine: results[0],
+        };
+      } else {
+        return {
+          success: false,
+          error: "RAG Engine not found",
+        };
+      }
+    } catch (error) {
+      console.error("Error getting RAG engine from DB:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 
-  async addFriend(userId, friendUsername) {
-    return await this.database.addFriend(userId, friendUsername);
+  // 🔧 修正：上傳文檔到用戶 RAG - 傳遞完整參數
+  async uploadToUserRAG(userId, file, fileName, engineId) {
+    try {
+      console.log(
+        `📤 Uploading file to RAG engine ${engineId} for user: ${userId}`
+      );
+
+      // 檢查用戶權限
+      const hasAccess = await this.canUserAccessRAG(userId, engineId);
+      if (!hasAccess) {
+        return {
+          success: false,
+          error: "您沒有權限上傳文檔到此 RAG Engine",
+        };
+      }
+
+      // 🔧 修正：傳遞完整的參數列表
+      const result = await this.fileOps.uploadToUserRAG(
+        userId,
+        file,
+        fileName,
+        engineId,
+        // 傳遞 createUserRAGEngine 回調
+        (userId, engineName, description, visibility) =>
+          this.createUserRAGEngine(userId, engineName, description),
+        // 傳遞 getRAGEngineFromDB 回調
+        (ragId) => this.getRAGEngineFromDB(ragId)
+      );
+
+      return result;
+    } catch (error) {
+      console.error("Error uploading to user RAG:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 
-  async acceptFriendRequest(userId, friendId) {
-    return await this.database.acceptFriendRequest(userId, friendId);
+  // 🔧 添加缺失的方法：查詢用戶 RAG
+  async queryUserRAG(userId, question, engineId) {
+    try {
+      console.log(`💬 User ${userId} querying RAG engine: ${engineId}`);
+
+      // 使用查詢操作進行查詢
+      const result = await this.queryOps.queryUserRAG(
+        userId,
+        question,
+        engineId,
+        (userId, ragId) => this.canUserAccessRAG(userId, ragId),
+        (ragId) => this.getRAGEngineFromDB(ragId)
+      );
+
+      return result;
+    } catch (error) {
+      console.error("Error querying user RAG:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 
-  async shareRAGEngineToUser(ownerId, ragId, targetUserId) {
-    return await this.database.shareRAGEngineToUser(
-      ownerId,
-      ragId,
-      targetUserId
-    );
+  // 🔧 添加缺失的方法：刪除用戶文檔
+  async deleteUserDocument(userId, fileId, ragId) {
+    try {
+      console.log(
+        `🗑️ User ${userId} deleting document ${fileId} from RAG ${ragId}`
+      );
+
+      // 使用檔案操作刪除文檔
+      const result = await this.fileOps.deleteUserDocument(
+        userId,
+        fileId,
+        ragId,
+        (userId, ragId) => this.canUserAccessRAG(userId, ragId)
+      );
+
+      return result;
+    } catch (error) {
+      console.error("Error deleting user document:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 
-  async getFileNameMapping(ragId) {
-    return await this.database.getFileNameMapping(ragId);
-  }
+  // 📥 導入多個文件到用戶 RAG
+  async importFiles(userId, engineId, files) {
+    try {
+      console.log(
+        `📥 Importing ${files.length} files to RAG engine ${engineId} for user: ${userId}`
+      );
 
-  async getOriginalFileName(ragId, fileId) {
-    return await this.database.getOriginalFileName(ragId, fileId);
-  }
+      // 檢查用戶是否有權限訪問此 engine
+      const canAccess = await this.canUserAccessRAG(userId, engineId);
+      if (!canAccess) {
+        return {
+          success: false,
+          error: "您無權限訪問此 RAG Engine",
+        };
+      }
 
-  // === 檔案操作方法 ===
-  async uploadToUserRAG(userId, file, fileName, ragId = null) {
-    return await this.fileOps.uploadToUserRAG(
-      userId,
-      file,
-      fileName,
-      ragId,
-      this.createUserRAGEngine.bind(this),
-      this.getRAGEngineFromDB.bind(this)
-    );
-  }
+      // 使用 FileOperations 的新 importFilesFromContent 方法
+      const result = await this.fileOps.importFilesFromContent(
+        userId,
+        engineId,
+        files
+      );
 
-  async uploadFileToEngine(corpusName, userId, fileBuffer, fileName) {
-    return await this.fileOps.uploadFileToEngine(
-      corpusName,
-      userId,
-      fileBuffer,
-      fileName
-    );
-  }
-
-  async importFileToRAG(corpusName, filePath) {
-    return await this.fileOps.importFileToRAG(corpusName, filePath);
-  }
-
-  async getUserDocuments(corpusName) {
-    return await this.fileOps.getUserDocuments(corpusName);
-  }
-
-  async deleteUserDocument(userId, ragFileId, ragId = null) {
-    return await this.fileOps.deleteUserDocument(
-      userId,
-      ragFileId,
-      ragId,
-      this.canUserAccessRAG.bind(this)
-    );
-  }
-
-  // === 查詢操作方法 ===
-  async queryUserRAG(userId, question, ragId = null) {
-    return await this.queryOps.queryUserRAG(
-      userId,
-      question,
-      ragId,
-      this.canUserAccessRAG.bind(this),
-      this.getRAGEngineFromDB.bind(this)
-    );
-  }
-
-  async querySpecificRAG(corpusName, question, userId, fileName) {
-    return await this.queryOps.querySpecificRAG(
-      corpusName,
-      question,
-      userId,
-      fileName
-    );
-  }
-
-  extractResponseText(response) {
-    return this.queryOps.extractResponseText(response);
-  }
-
-  // === Engine 管理方法 ===
-  async createUserRAGEngine(
-    userId,
-    engineName = null,
-    description = null,
-    visibility = "private"
-  ) {
-    return await this.engineMgmt.createUserRAGEngine(
-      userId,
-      engineName,
-      description,
-      visibility
-    );
-  }
-
-  async waitForOperation(operationName, maxWaitTime = 300000) {
-    return await this.engineMgmt.waitForOperation(operationName, maxWaitTime);
-  }
-
-  async listAllRAGEngines(pageSize = 100) {
-    return await this.engineMgmt.listAllRAGEngines(pageSize);
-  }
-
-  extractUserIdFromEngine(corpus) {
-    return this.engineMgmt.extractUserIdFromEngine(corpus);
-  }
-
-  async getEngineFileCount(corpusName) {
-    return await this.engineMgmt.getEngineFileCount(corpusName);
-  }
-
-  async deleteUserRAGEngine(corpusName, userId) {
-    return await this.engineMgmt.deleteUserRAGEngine(corpusName, userId);
-  }
-
-  // === 速率限制方法 ===
-  async rateLimitedCall(apiCall) {
-    return await this.fileOps.rateLimitedCall(apiCall);
-  }
-
-  // === 獲取配置屬性 ===
-  get projectId() {
-    return this.engineMgmt.projectId;
-  }
-
-  get location() {
-    return this.engineMgmt.location;
-  }
-
-  get bucketName() {
-    return this.fileOps.bucketName;
+      if (result.success) {
+        return {
+          success: true,
+          message: result.message,
+          importedFiles: result.results.filter(r => r.success),
+          summary: result.summary,
+        };
+      } else {
+        return {
+          success: false,
+          error: result.error,
+          details: result.results,
+        };
+      }
+    } catch (error) {
+      console.error("Error importing files to user RAG:", error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
   }
 }
 
