@@ -3,7 +3,7 @@ const DatabaseOperations = require("./database");
 const FileOperations = require("./fileOperations");
 const QueryOperations = require("./queryOperations");
 const EngineManagement = require("./engineManagement");
-const { authenticateToken } = require("./middleware");
+const { authenticateToken } = require("./middlewarecheck/middleware");
 const config = require("./config");
 
 module.exports = {

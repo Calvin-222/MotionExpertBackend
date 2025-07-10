@@ -3,7 +3,7 @@ const router = express.Router();
 const jwt = require("jsonwebtoken");
 const multer = require("multer"); // 添加 multer 支援檔案上傳
 const fs = require("fs");
-
+const { authenticateToken } = require("./middlewarecheck/middleware");
 // 🔧 設置 multer 用於檔案上傳
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -13,47 +13,13 @@ const upload = multer({
   },
 });
 
-// 🔧 在 rag.js 中創建自己的 authenticateUser 中間件
-const authenticateUser = (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).json({
-        success: false,
-        error: "Authorization token required",
-      });
-    }
-
-    const token = authHeader.substring(7); // Remove 'Bearer ' prefix
-
-    const JWT_SECRET = process.env.JWT_SECRET || "your-jwt-secret-key";
-
-    const decoded = jwt.verify(token, JWT_SECRET);
-
-    // 將用戶信息添加到 request 對象
-    req.user = {
-      userId: decoded.userId,
-      username: decoded.username,
-      sessionId: decoded.sessionId,
-    };
-
-    next();
-  } catch (error) {
-    console.error("Authentication error:", error.message);
-    return res.status(401).json({
-      success: false,
-      error: "Invalid or expired token",
-    });
-  }
-};
 
 // 🔧 使用統一的 RAG 系統
 const MultiUserRAGSystem = require("./rag/MultiUserRAGSystem");
 const ragSystem = new MultiUserRAGSystem();
 
 // 📊 用戶狀態檢查端點
-router.get("/users/status", authenticateUser, async (req, res) => {
+router.get("/users/status", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     console.log(`📊 Checking status for user: ${userId}`);
@@ -78,7 +44,7 @@ router.get("/users/status", authenticateUser, async (req, res) => {
 });
 
 // 🏗️ 創建 RAG Engine 端點
-router.post("/users/engines", authenticateUser, async (req, res) => {
+router.post("/users/engines", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     const { engineName, description } = req.body;
@@ -113,7 +79,7 @@ router.post("/users/engines", authenticateUser, async (req, res) => {
 });
 
 // 📋 獲取用戶 RAG Engines 列表
-router.get("/users/:userId/engines", authenticateUser, async (req, res) => {
+router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
   try {
     const requestingUserId = req.user.userId;
     const targetUserId = req.params.userId;
@@ -160,7 +126,7 @@ router.get("/users/:userId/engines", authenticateUser, async (req, res) => {
 // 📤 用戶檔案上傳端點 (支援 FormData)
 router.post(
   "/users/:userId/upload",
-  authenticateUser,
+  authenticateToken,
   upload.single("file"),
   async (req, res) => {
     try {
@@ -238,7 +204,7 @@ router.post(
 // 💬 查詢 RAG Engine 端點
 router.post(
   "/users/:userId/engines/:engineId/query",
-  authenticateUser,
+  authenticateToken,
   async (req, res) => {
     try {
       const { engineId } = req.params;
@@ -292,7 +258,7 @@ router.post(
 // 🗑️ 刪除文檔端點
 router.delete(
   "/users/documents/:fileId",
-  authenticateUser,
+  authenticateToken,
   async (req, res) => {
     try {
       const { fileId } = req.params;
@@ -335,7 +301,7 @@ router.delete(
 );
 
 // 🤝 添加好友
-router.post("/users/friends/add", authenticateUser, async (req, res) => {
+router.post("/users/friends/add", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     const { friendUsername } = req.body;
@@ -353,7 +319,7 @@ router.post("/users/friends/add", authenticateUser, async (req, res) => {
 });
 
 // 🤝 接受好友邀請
-router.post("/users/friends/accept", authenticateUser, async (req, res) => {
+router.post("/users/friends/accept", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
     const { friendId } = req.body;
@@ -378,7 +344,7 @@ router.post("/users/friends/accept", authenticateUser, async (req, res) => {
 });
 
 // 👥 獲取好友列表
-router.get("/users/friends", authenticateUser, async (req, res) => {
+router.get("/users/friends", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
 
@@ -400,7 +366,7 @@ router.get("/users/friends", authenticateUser, async (req, res) => {
 });
 
 // 🔗 獲取可訪問的 RAG Engines
-router.get("/users/accessible-engines", authenticateUser, async (req, res) => {
+router.get("/users/accessible-engines", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
 
@@ -427,7 +393,7 @@ router.get("/users/accessible-engines", authenticateUser, async (req, res) => {
 // 📋 檔案映射路由
 router.get(
   "/users/engines/:engineId/file-mapping",
-  authenticateUser,
+  authenticateToken,
   async (req, res) => {
     try {
       const { engineId } = req.params;
@@ -463,7 +429,7 @@ router.get(
 // 📋 獲取特定 RAG Engine 的文檔列表
 router.get(
   "/users/:userId/engines/:engineId/documents",
-  authenticateUser,
+  authenticateToken,
   async (req, res) => {
     try {
       const { userId, engineId } = req.params;
@@ -504,7 +470,7 @@ router.get(
 );
 
 // 📋 用戶所有文檔列表
-router.get("/users/documents", authenticateUser, async (req, res) => {
+router.get("/users/documents", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
 
@@ -543,7 +509,7 @@ router.get("/users/documents", authenticateUser, async (req, res) => {
 // 🔗 分享功能
 router.post(
   "/users/engines/:engineId/share",
-  authenticateUser,
+  authenticateToken,
   async (req, res) => {
     try {
       const { engineId } = req.params;

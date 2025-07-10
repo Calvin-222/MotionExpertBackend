@@ -1,30 +1,12 @@
 var express = require("express");
 var router = express.Router();
-const { pool } = require("../config/database");
 const { VertexAI } = require("@google-cloud/vertexai");
-const jwt = require('jsonwebtoken');
-
+const { authenticateToken } = require("./middlewarecheck/middleware");
 // Initialize Vertex AI
 const vertexAI = new VertexAI({
   project: process.env.GOOGLE_CLOUD_PROJECT,
   location: process.env.GOOGLE_CLOUD_LOCATION || "us-central1",
 });
-function authenticateToken(req, res, next) {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
-
-  if (!token) {
-    return res.status(401).json({ success: false, message: 'Access token required' });
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) {
-      return res.status(403).json({ success: false, message: 'Invalid token' });
-    }
-    req.user = user; // user should contain userid
-    next();
-  });
-}
 // 確保環境變數已正確設置 (例如, GOOGLE_APPLICATION_CREDENTIALS)
 // Set up generation config
 const generationConfig = {
@@ -100,7 +82,7 @@ router.get("/api/test", function (req, res, next) {
 });
 
 /* POST API for Vertex AI content generation */
-router.post("/api/generate", async function (req, res, next) {
+router.post("/api/generate", authenticateToken, async function (req, res, next) {
   try {
     console.log("正在初始化 Vertex AI...");
 
@@ -158,7 +140,7 @@ router.post("/api/generate", async function (req, res, next) {
 });
 
 /* 新增：POST API for Synopsis processing - 處理完整的劇情概要 */
-router.post("/api/synopsis", async function (req, res, next) {
+router.post("/api/synopsis",authenticateToken, async function (req, res, next) {
   try {
     console.log("正在處理劇情概要...");
 
@@ -232,7 +214,7 @@ ${synopsisString}
 });
 
 /* 新增：POST API for Synopsis follow-up - 處理後續指令 */
-router.post("/api/synopsis/follow-up", async function (req, res, next) {
+router.post("/api/synopsis/follow-up", authenticateToken,  async function (req, res, next) {
   try {
     console.log("正在處理劇本後續指令...");
 
@@ -356,77 +338,5 @@ router.get("/api/model-info", function (req, res, next) {
   });
 });
 
-router.get('/api/search-users', async (req, res) => {
-  try {
-    const searchTerm = req.query.search || '';
 
-    if (!searchTerm || searchTerm.trim().length < 3) {
-      return res.json({
-        success: true,
-        users: [],
-        count: 0,
-        message: ''
-      });
-    }
-    //if(searchTerm == username){}
-    
-    let query = 'SELECT username FROM users';
-    let queryParams = [];
-    
-    if (searchTerm) {
-      query += ' WHERE username LIKE ?';
-      queryParams.push(`%${searchTerm}%`);
-    }
-    
-    query += ' ORDER BY created_at DESC LIMIT 50';
-    
-    const [users] = await pool.execute(query, queryParams);
-    
-    res.json({
-      success: true,
-      users: users,
-      count: users.length
-    });
-  } catch (error) {
-    console.error('Search error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error' 
-    });
-  }
-});
-
-router.post('/api/add-friend', authenticateToken, async (req, res) => {
-  try {
-    const { friendUsername } = req.body;
-    const currentUserId = req.user.userId; // From JWT
-    // Get friend's userid
-    const friendQuery = 'SELECT userid FROM users WHERE username = ?';
-    const [friendResult] = await pool.execute(friendQuery, [friendUsername]);
-
-    if (friendResult.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found' });
-    }
-
-    const friendId = friendResult[0].userid;
-
-    // Check if already friends (single direction only)
-    const existingQuery = 'SELECT id FROM friendship WHERE userid = ? AND friendid = ?';
-    const [existing] = await pool.execute(existingQuery, [currentUserId, friendId]);
-
-    if (existing.length > 0) {
-      return res.status(400).json({ success: false, message: 'Already friends' });
-    }
-
-    // Insert friendship
-    const insertQuery = 'INSERT INTO friendship (userid, friendid) VALUES (?, ?)';
-    await pool.execute(insertQuery, [currentUserId, friendId]);
-
-    res.json({ success: true, message: 'Friend added successfully' });
-
-  } catch (error) {
-    console.error('Add friend error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
-  }
-});
 module.exports = router;
