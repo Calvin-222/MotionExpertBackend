@@ -62,6 +62,7 @@ class MultiUserRAGSystem {
           },
           // 保持向後兼容
           engineId: result.corpusId,
+          corpusName: result.corpusName, // 添加頂層 corpusName
         };
       } else {
         return {
