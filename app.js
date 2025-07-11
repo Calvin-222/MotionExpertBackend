@@ -13,7 +13,8 @@ console.log('[DEBUG] GOOGLE_CLOUD_PROJECT:', process.env.GOOGLE_CLOUD_PROJECT);
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 var ragRouter = require('./routes/rag');
-var authRouter = require('./routes/auth'); // ADD THIS LINE
+var authRouter = require('./routes/auth'); 
+var friendsRouter = require('./routes/friends'); // ADD THIS LINE 
 
 var app = express();
 
@@ -34,7 +35,8 @@ app.use(cors());
 app.use('/', indexRouter);
 app.use('/users', usersRouter);
 app.use('/api/rag', ragRouter);
-app.use('/api/auth', authRouter); // ADD THIS LINE
+app.use('/api/auth', authRouter); // 
+app.use('/api/friends', friendsRouter); // ADD THIS LINE
 
 // catch 404 and forward to error handler
 app.use(function(req, res, next) {

@@ -2,6 +2,7 @@ var express = require("express");
 var router = express.Router();
 const { VertexAI } = require("@google-cloud/vertexai");
 const { authenticateToken } = require("./middlewarecheck/middleware");
+
 // Initialize Vertex AI
 const vertexAI = new VertexAI({
   project: process.env.GOOGLE_CLOUD_PROJECT,
@@ -35,22 +36,6 @@ const safetySettings = [
   },
 ];
 
-/* GET home page. */
-router.get("/", function (req, res, next) {
-  res.render("index", { title: "Motion Expert Backend" });
-});
-
-/* GET API health check */
-router.get("/api/health", function (req, res, next) {
-  res.json({
-    success: true,
-    status: "healthy",
-    message: "MotionExpert Backend is running",
-    timestamp: new Date().toISOString(),
-    uptime: process.uptime(),
-    version: "1.0.0",
-  });
-});
 
 /* GET API status check */
 router.get("/api/status", function (req, res, next) {
@@ -82,7 +67,7 @@ router.get("/api/test", function (req, res, next) {
 });
 
 /* POST API for Vertex AI content generation */
-router.post("/api/generate", authenticateToken, async function (req, res, next) {
+router.post("/api/generate", async function (req, res, next) {
   try {
     console.log("正在初始化 Vertex AI...");
 
@@ -214,7 +199,7 @@ ${synopsisString}
 });
 
 /* 新增：POST API for Synopsis follow-up - 處理後續指令 */
-router.post("/api/synopsis/follow-up", authenticateToken,  async function (req, res, next) {
+router.post("/api/synopsis/follow-up", authenticateToken,async function (req, res, next) {
   try {
     console.log("正在處理劇本後續指令...");
 
