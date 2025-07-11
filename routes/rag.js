@@ -810,4 +810,171 @@ router.delete("/debug/documents/:fileId", authenticateToken, async (req, res) =>
   }
 });
 
+// 🤖 我的Copilot - 個人化智能助手端點
+router.post("/my-copilot", authenticateToken, async (req, res) => {
+  try {
+    const userId = req.user.userId;
+    const { message, conversation_id } = req.body;
+
+    console.log(`🤖 My Copilot request from user ${userId}: ${message?.substring(0, 50)}...`);
+
+    if (!message || typeof message !== 'string' || message.trim().length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "請提供有效的訊息內容",
+        code: "INVALID_MESSAGE"
+      });
+    }
+
+    // 獲取用戶的所有 RAG engines
+    const userEngines = await ragSystem.getUserRAGEngines(userId);
+    
+    if (!userEngines || userEngines.length === 0) {
+      return res.json({
+        success: true,
+        response: "您好！我是您的個人智能助手。目前您還沒有上傳任何文檔，我無法基於特定內容為您提供幫助。請先創建 RAG Engine 並上傳一些文檔，這樣我就能基於您的資料為您提供更精準的協助。",
+        copilot_type: "no_documents",
+        suggestions: [
+          "創建新的 RAG Engine",
+          "上傳文檔到現有 Engine",
+          "查看系統功能說明"
+        ],
+        conversation_id: conversation_id || generateConversationId(),
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // 智能選擇最佳的 RAG engine 或搜尋所有 engines
+    let bestResponse = null;
+    let searchResults = [];
+    
+    console.log(`🔍 Searching across ${userEngines.length} RAG engines for user ${userId}`);
+
+    // 並行搜尋所有用戶的 RAG engines
+    const searchPromises = userEngines.map(async (engine) => {
+      try {
+        const result = await ragSystem.queryUserRAG(
+          userId,
+          message,
+          engine.ragid,
+          ragSystem.canUserAccessRAG.bind(ragSystem),
+          ragSystem.getRAGEngineFromDB.bind(ragSystem)
+        );
+
+        if (result.success && result.sources && result.sources.contexts && result.sources.contexts.length > 0) {
+          return {
+            engineId: engine.ragid,
+            engineName: engine.ragname,
+            result: result,
+            relevanceScore: result.sources.contexts.length
+          };
+        }
+        return null;
+      } catch (error) {
+        console.error(`Error searching engine ${engine.ragid}:`, error);
+        return null;
+      }
+    });
+
+    const results = await Promise.all(searchPromises);
+    searchResults = results.filter(r => r !== null);
+
+    // 選擇最佳回應（找到最多相關內容的 engine）
+    if (searchResults.length > 0) {
+      bestResponse = searchResults.reduce((best, current) => 
+        current.relevanceScore > (best.relevanceScore || 0) ? current : best
+      );
+    }
+
+    // 構建 Copilot 回應
+    if (bestResponse) {
+      // 有找到相關文檔內容
+      const enhancedResponse = await enhanceCopilotResponse(
+        message, 
+        bestResponse.result.answer, 
+        bestResponse.engineName,
+        searchResults.length
+      );
+
+      res.json({
+        success: true,
+        response: enhancedResponse,
+        copilot_type: "document_based",
+        source_engine: {
+          id: bestResponse.engineId,
+          name: bestResponse.engineName
+        },
+        additional_sources: searchResults.length - 1,
+        conversation_id: conversation_id || generateConversationId(),
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      // 沒有找到相關內容，提供一般性協助
+      const generalResponse = await generateGeneralCopilotResponse(message, userEngines);
+      
+      res.json({
+        success: true,
+        response: generalResponse,
+        copilot_type: "general_assistance",
+        available_engines: userEngines.map(e => ({ id: e.ragid, name: e.ragname })),
+        suggestions: [
+          "嘗試更具體的問題",
+          "檢查文檔是否已正確上傳",
+          "瀏覽可用的文檔列表"
+        ],
+        conversation_id: conversation_id || generateConversationId(),
+        timestamp: new Date().toISOString()
+      });
+    }
+
+  } catch (error) {
+    console.error("My Copilot error:", error);
+    res.status(500).json({
+      success: false,
+      error: "智能助手服務暫時無法使用，請稍後再試",
+      details: error.message,
+      copilot_type: "error"
+    });
+  }
+});
+
+// 輔助函數：增強 Copilot 回應
+async function enhanceCopilotResponse(userMessage, originalAnswer, engineName, totalSources) {
+  const prefixes = [
+    `基於您在「${engineName}」中的文檔，我為您找到了相關信息：\n\n`,
+    `根據您上傳的「${engineName}」資料，我可以回答您的問題：\n\n`,
+    `在您的「${engineName}」文檔中，我發現了相關內容：\n\n`
+  ];
+  
+  const suffix = totalSources > 1 
+    ? `\n\n💡 我還在您的其他 ${totalSources - 1} 個文檔庫中找到了相關資料，如需更多信息請告訴我。`
+    : `\n\n💡 這個回答基於您上傳的文檔內容。如有其他問題，歡迎繼續詢問！`;
+
+  const randomPrefix = prefixes[Math.floor(Math.random() * prefixes.length)];
+  
+  return randomPrefix + originalAnswer + suffix;
+}
+
+// 輔助函數：生成一般性 Copilot 回應
+async function generateGeneralCopilotResponse(userMessage, userEngines) {
+  const engineList = userEngines.map(e => `• ${e.ragname}`).join('\n');
+  
+  return `我是您的個人智能助手！雖然在您現有的文檔中沒有找到直接相關的信息，但我可以協助您：
+
+📚 您目前有以下文檔庫：
+${engineList}
+
+🤔 您可以嘗試：
+• 使用更具體的關鍵詞重新提問
+• 指定要搜尋的特定文檔庫
+• 上傳更多相關文檔來豐富資料庫
+
+💬 或者直接告訴我您想了解什麼，我會盡力為您提供協助！`;
+}
+
+// 輔助函數：生成對話 ID
+function generateConversationId() {
+  return 'copilot_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+}
+
 module.exports = router;
