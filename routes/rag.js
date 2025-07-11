@@ -256,6 +256,52 @@ router.post(
 );
 
 // 🗑️ 刪除文檔端點
+// router.delete(
+//   "/users/documents/:fileId",
+//   authenticateToken,
+//   async (req, res) => {
+//     try {
+//       const { fileId } = req.params;
+//       const { ragId } = req.query;
+//       const userId = req.user.userId;
+
+//       console.log(`🗑️ User ${userId} deleting document: ${fileId}`);
+
+//       if (!ragId) {
+//         return res.status(400).json({
+//           success: false,
+//           error: "ragId is required for document deletion",
+//         });
+//       }
+
+//       const result = await ragSystem.deleteUserDocument(userId, fileId, ragId);
+
+//       if (result.success) {
+//         res.json({
+//           success: true,
+//           message: result.message,
+//           fileId: fileId,
+//           ragId: ragId,
+//         });
+//       } else {
+//         const statusCode = result.error.includes("權限") ? 403 : 500;
+//         res.status(statusCode).json({
+//           success: false,
+//           error: result.error,
+//         });
+//       }
+//     } catch (error) {
+//       console.error("Delete document endpoint error:", error);
+//       res.status(500).json({
+//         success: false,
+//         error: "Failed to delete document",
+//       });
+//     }
+//   }
+// );
+
+// /cc/Desktop/MotionExpert_Backend/MotionExpertBackend/routes/rag.js
+// 🗑️ 刪除文檔端點 - 修正版
 router.delete(
   "/users/documents/:fileId",
   authenticateToken,
@@ -284,10 +330,16 @@ router.delete(
           ragId: ragId,
         });
       } else {
-        const statusCode = result.error.includes("權限") ? 403 : 500;
+        // 🔧 修正：安全的錯誤檢查
+        const errorMessage = result.error || "Failed to delete document";
+        const statusCode =
+          typeof errorMessage === "string" && errorMessage.includes("權限")
+            ? 403
+            : 500;
+
         res.status(statusCode).json({
           success: false,
-          error: result.error,
+          error: errorMessage,
         });
       }
     } catch (error) {
@@ -601,7 +653,7 @@ router.get("/debug/google-cloud", authenticateToken, async (req, res) => {
     console.log(`🔍 === GOOGLE CLOUD DIAGNOSTIC REQUEST ===`);
     const engineMgmt = new (require("./rag/engineManagement"))();
     const diagnosis = await engineMgmt.diagnoseGoogleCloudSetup();
-    
+
     console.log(`📊 Diagnosis result:`, diagnosis);
     res.json(diagnosis);
   } catch (error) {
@@ -615,29 +667,33 @@ router.get("/debug/google-cloud", authenticateToken, async (req, res) => {
 });
 
 // 🧪 測試創建簡單 RAG Corpus
-router.post("/debug/create-simple-corpus", authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { engineName = "debug_test" } = req.body;
-    
-    console.log(`🔍 === SIMPLE CORPUS CREATION TEST ===`);
-    console.log(`👤 User: ${userId}`);
-    console.log(`📛 Engine: ${engineName}`);
-    
-    const engineMgmt = new (require("./rag/engineManagement"))();
-    const result = await engineMgmt.createSimpleRAGCorpus(userId, engineName);
-    
-    console.log(`📊 Creation result:`, result);
-    res.json(result);
-  } catch (error) {
-    console.error("❌ Simple corpus creation error:", error);
-    res.status(500).json({
-      success: false,
-      error: "Simple corpus creation failed",
-      details: error.message,
-    });
+router.post(
+  "/debug/create-simple-corpus",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const userId = req.user.userId;
+      const { engineName = "debug_test" } = req.body;
+
+      console.log(`🔍 === SIMPLE CORPUS CREATION TEST ===`);
+      console.log(`👤 User: ${userId}`);
+      console.log(`📛 Engine: ${engineName}`);
+
+      const engineMgmt = new (require("./rag/engineManagement"))();
+      const result = await engineMgmt.createSimpleRAGCorpus(userId, engineName);
+
+      console.log(`📊 Creation result:`, result);
+      res.json(result);
+    } catch (error) {
+      console.error("❌ Simple corpus creation error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Simple corpus creation failed",
+        details: error.message,
+      });
+    }
   }
-});
+);
 
 // 🧪 檢查特定 RAG Corpus 狀態
 router.get("/debug/corpus/:corpusId", authenticateToken, async (req, res) => {
@@ -747,67 +803,130 @@ router.post(
 );
 
 // 🧪 調試刪除端點 - 用於測試文件刪除
-router.delete("/debug/documents/:fileId", authenticateToken, async (req, res) => {
-  try {
-    const { fileId } = req.params;
-    const { ragId } = req.query;
-    const userId = req.user.userId;
+router.delete(
+  "/debug/documents/:fileId",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { fileId } = req.params;
+      const { ragId } = req.query;
+      const userId = req.user.userId;
 
-    console.log(`🧪 DEBUG DELETE - User: ${userId}, File: ${fileId}, RAG: ${ragId}`);
+      console.log(
+        `🧪 DEBUG DELETE - User: ${userId}, File: ${fileId}, RAG: ${ragId}`
+      );
 
-    if (!ragId) {
-      return res.status(400).json({
+      if (!ragId) {
+        return res.status(400).json({
+          success: false,
+          error: "ragId is required for document deletion",
+        });
+      }
+
+      // 首先列出當前的文件
+      console.log(`🔍 Listing current files before deletion...`);
+      const fileOps = new (require("./rag/fileOperations"))();
+      const corpusName = `projects/${process.env.GOOGLE_CLOUD_PROJECT}/locations/us-central1/ragCorpora/${ragId}`;
+
+      const beforeFiles = await fileOps.getUserDocuments(corpusName);
+      console.log(`📋 Files before deletion:`, beforeFiles);
+
+      // 執行刪除
+      const result = await ragSystem.deleteUserDocument(userId, fileId, ragId);
+
+      // 再次列出文件
+      console.log(`🔍 Listing files after deletion...`);
+      const afterFiles = await fileOps.getUserDocuments(corpusName);
+      console.log(`📋 Files after deletion:`, afterFiles);
+
+      // 比較前後差異
+      const beforeCount = beforeFiles.files?.length || 0;
+      const afterCount = afterFiles.files?.length || 0;
+      const actuallyDeleted = beforeCount > afterCount;
+
+      res.json({
+        success: result.success,
+        message: result.message,
+        details: {
+          beforeDeletion: {
+            fileCount: beforeCount,
+            files:
+              beforeFiles.files?.map((f) => ({ id: f.id, name: f.name })) || [],
+          },
+          afterDeletion: {
+            fileCount: afterCount,
+            files:
+              afterFiles.files?.map((f) => ({ id: f.id, name: f.name })) || [],
+          },
+          actuallyDeleted: actuallyDeleted,
+          deletionResult: result,
+        },
+      });
+    } catch (error) {
+      console.error("Debug delete error:", error);
+      res.status(500).json({
         success: false,
-        error: "ragId is required for document deletion",
+        error: "Debug delete failed",
+        details: error.message,
       });
     }
-
-    // 首先列出當前的文件
-    console.log(`🔍 Listing current files before deletion...`);
-    const fileOps = new (require("./rag/fileOperations"))();
-    const corpusName = `projects/${process.env.GOOGLE_CLOUD_PROJECT}/locations/us-central1/ragCorpora/${ragId}`;
-    
-    const beforeFiles = await fileOps.getUserDocuments(corpusName);
-    console.log(`📋 Files before deletion:`, beforeFiles);
-
-    // 執行刪除
-    const result = await ragSystem.deleteUserDocument(userId, fileId, ragId);
-
-    // 再次列出文件
-    console.log(`🔍 Listing files after deletion...`);
-    const afterFiles = await fileOps.getUserDocuments(corpusName);
-    console.log(`📋 Files after deletion:`, afterFiles);
-
-    // 比較前後差異
-    const beforeCount = beforeFiles.files?.length || 0;
-    const afterCount = afterFiles.files?.length || 0;
-    const actuallyDeleted = beforeCount > afterCount;
-
-    res.json({
-      success: result.success,
-      message: result.message,
-      details: {
-        beforeDeletion: {
-          fileCount: beforeCount,
-          files: beforeFiles.files?.map(f => ({ id: f.id, name: f.name })) || []
-        },
-        afterDeletion: {
-          fileCount: afterCount,
-          files: afterFiles.files?.map(f => ({ id: f.id, name: f.name })) || []
-        },
-        actuallyDeleted: actuallyDeleted,
-        deletionResult: result
-      }
-    });
-
-  } catch (error) {
-    console.error("Debug delete error:", error);
-    res.status(500).json({
-      success: false,
-      error: "Debug delete failed",
-      details: error.message
-    });
   }
-});
+);
+
+// 🗑️ 刪除 RAG Engine 端點
+router.delete(
+  "/users/:userId/engines/:engineId",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { userId, engineId } = req.params;
+      const requestingUserId = req.user.userId;
+
+      // 確保用戶只能刪除自己的 engines
+      if (requestingUserId !== userId) {
+        return res.status(403).json({
+          success: false,
+          error: "您只能刪除自己的 RAG Engines",
+        });
+      }
+
+      console.log(`🗑️ User ${userId} deleting RAG engine: ${engineId}`);
+
+      // 構建 corpus 名稱
+      const corpusName = `projects/${process.env.GOOGLE_CLOUD_PROJECT}/locations/us-central1/ragCorpora/${engineId}`;
+
+      // 🔧 修正：直接使用 engineManagement
+      const EngineManagement = require("./rag/engineManagement");
+      const engineMgmt = new EngineManagement();
+      const result = await engineMgmt.deleteUserRAGEngine(corpusName, userId);
+
+      if (result.success) {
+        res.json({
+          success: true,
+          message: result.message,
+          engineId: engineId,
+          deletedEngine: result.deletedEngine,
+        });
+      } else {
+        const errorMessage = result.error || "Failed to delete RAG engine";
+        const statusCode =
+          typeof errorMessage === "string" && errorMessage.includes("權限")
+            ? 403
+            : 500;
+
+        res.status(statusCode).json({
+          success: false,
+          error: errorMessage,
+        });
+      }
+    } catch (error) {
+      console.error("Delete RAG engine endpoint error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to delete RAG engine",
+      });
+    }
+  }
+);
 
 module.exports = router;

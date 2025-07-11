@@ -158,6 +158,15 @@ class MultiUserRAGSystem {
         (ragId) => this.getRAGEngineFromDB(ragId)
       );
 
+      // 🔴 新增：如果導入失敗，將詳細錯誤訊息回傳
+      if (!result.success) {
+        return {
+          success: false,
+          error: result.error,
+          details: result.details,
+        };
+      }
+
       return result;
     } catch (error) {
       console.error("Error uploading to user RAG:", error);
@@ -244,7 +253,7 @@ class MultiUserRAGSystem {
         return {
           success: true,
           message: result.message,
-          importedFiles: result.results.filter(r => r.success),
+          importedFiles: result.results.filter((r) => r.success),
           summary: result.summary,
         };
       } else {

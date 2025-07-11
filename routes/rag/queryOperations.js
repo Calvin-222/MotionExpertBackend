@@ -397,19 +397,36 @@ ${contextTexts}
   }
 
   // 🔧 提取 Gemini 回應的輔助方法
+  // extractGeminiResponse(responseData) {
+  //   try {
+  //     if (responseData.candidates && responseData.candidates.length > 0) {
+  //       const candidate = responseData.candidates[0];
+  //       if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
+  //         return candidate.content.parts[0].text || "無法提取回應文本";
+  //       }
+  //     }
+      
+  //     console.warn("Unexpected Gemini response structure:", responseData);
+  //     return "抱歉，無法解析 AI 回應內容";
+  //   } catch (error) {
+  //     console.error("Error extracting Gemini response:", error);
+  //     return "AI 回應解析錯誤";
+  //   }
+  // }
+
   extractGeminiResponse(responseData) {
     try {
-      if (responseData.candidates && responseData.candidates.length > 0) {
-        const candidate = responseData.candidates[0];
-        if (candidate.content && candidate.content.parts && candidate.content.parts.length > 0) {
-          return candidate.content.parts[0].text || "無法提取回應文本";
-        }
+      const candidate = responseData.candidates?.[0];
+      if (!candidate) return "無法提取回應內容";
+      if (candidate.content?.parts?.[0]?.text) {
+        return candidate.content.parts[0].text;
       }
-      
-      console.warn("Unexpected Gemini response structure:", responseData);
-      return "抱歉，無法解析 AI 回應內容";
-    } catch (error) {
-      console.error("Error extracting Gemini response:", error);
+      if (candidate.content?.text) {
+        return candidate.content.text;
+      }
+      return "無法提取回應內容";
+    } catch (e) {
+      console.error("Error extracting Gemini response:", e);
       return "AI 回應解析錯誤";
     }
   }
