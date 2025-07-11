@@ -152,6 +152,7 @@ class FileOperations {
           Authorization: `Bearer ${accessToken.token}`,
           "Content-Type": "application/json",
         },
+        timeout: 60000, // 設置 60 秒超時
       });
 
       console.log(

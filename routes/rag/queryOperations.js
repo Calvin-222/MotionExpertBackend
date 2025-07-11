@@ -233,6 +233,78 @@ class QueryOperations {
     }
   }
 
+  // 💬 RAG Engine 查詢方法 - 修正版
+  async queryRAGEngine(corpusName, question, userId, fileName = null) {
+    try {
+      console.log(`💬 === RAG ENGINE QUERY ===`);
+      console.log(`🏛️ Corpus Name: ${corpusName}`);
+      console.log(`❓ Question: ${question.substring(0, 100)}...`);
+      console.log(`👤 User ID: ${userId}`);
+
+      if (!corpusName || corpusName.includes('undefined')) {
+        throw new Error('Invalid corpus name provided');
+      }
+
+      const authClient = await this.auth.getClient();
+      const accessToken = await authClient.getAccessToken();
+
+      const queryUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/projects/${this.projectId}/locations/${this.location}:retrieveContexts`;
+
+      const queryRequest = {
+        vertexRagStore: {
+          ragCorpora: [corpusName],
+        },
+        query: {
+          text: question,
+        },
+      };
+
+      console.log(`📤 Sending query request...`);
+      const response = await axios.post(queryUrl, queryRequest, {
+        headers: {
+          Authorization: `Bearer ${accessToken.token}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000,
+      });
+
+      console.log(`✅ Query successful`);
+      const contexts = response.data.contexts?.contexts || [];
+      
+      if (contexts.length > 0) {
+        console.log(`🤖 Generating AI answer based on ${contexts.length} retrieved contexts...`);
+        const aiAnswer = await this.generateAnswerFromContexts(question, contexts);
+        
+        return {
+          success: true,
+          answer: aiAnswer.success ? aiAnswer.answer : "基於您上傳的文檔內容找到相關信息，但生成答案時出現問題。",
+          sources: { contexts: contexts },
+          rawResponse: response.data,
+          aiGenerationDetails: aiAnswer
+        };
+      } else {
+        return {
+          success: true,
+          answer: "抱歉，在您的文檔中沒有找到相關信息。",
+          sources: { contexts: [] },
+          rawResponse: response.data,
+        };
+      }
+    } catch (error) {
+      console.error(`❌ RAG Engine query failed:`, {
+        message: error.message,
+        status: error.response?.status,
+        data: error.response?.data
+      });
+
+      return {
+        success: false,
+        error: error.message,
+        details: error.response?.data
+      };
+    }
+  }
+
   // 🤖 使用生成式 AI 基於檢索到的內容生成答案 (使用 Google GenAI SDK)
   async generateAnswerFromContexts(question, contexts) {
     try {

@@ -50,6 +50,9 @@ class EngineManagement {
         .substr(2, 9)}`;
       const finalDisplayName = `${userId}_${engineName || "default"}`;
       const finalRagName = engineName || `${userId}_default_rag`;
+      
+      // 初始化 corpusName 變數
+      let corpusName = null;
 
       console.log(`🆔 Generated Corpus ID: ${corpusId}`);
       console.log(`📛 Display Name: ${finalDisplayName}`);
@@ -79,7 +82,7 @@ class EngineManagement {
       console.log(`📨 Creation Response Status: ${response.status}`);
       console.log(`📨 Response Data:`, JSON.stringify(response.data, null, 2));
 
-      let finalCorpusId, corpusName;
+      let finalCorpusId;
 
       // Step 4: 檢查是否為異步操作
       if (response.data.name && response.data.name.includes("/operations/")) {
@@ -212,10 +215,17 @@ class EngineManagement {
       // Step 7: 最終成功
       console.log(`🎉 === RAG ENGINE CREATION COMPLETED SUCCESSFULLY ===`);
       console.log(`🎉 Ready for use: ${corpusName}`);
+      
+      // 除錯：檢查返回值
+      console.log(`🔍 === FINAL RETURN VALUES DEBUG ===`);
+      console.log(`🔍 finalCorpusId: ${finalCorpusId}`);
+      console.log(`🔍 corpusName: ${corpusName}`);
+      console.log(`🔍 corpusName type: ${typeof corpusName}`);
 
       return {
         success: true,
         userId: userId,
+        engineId: finalCorpusId,  // ✅ 修正：添加 engineId
         corpusId: finalCorpusId,
         corpusName: corpusName,
         displayName: finalDisplayName,
