@@ -88,12 +88,18 @@ router.post(
       const { targetUserId } = req.body;
 
       if (!targetUserId) {
-        return res.status(400).json({ success: false, error: "targetUserId is required" });
+        return res
+          .status(400)
+          .json({ success: false, error: "targetUserId is required" });
       }
 
       const EngineManagement = require("./rag/engineManagement");
       const engineMgmt = new EngineManagement();
-      const result = await engineMgmt.shareRAGEngineToUser(ownerId, engineId, targetUserId);
+      const result = await engineMgmt.shareRAGEngineToUser(
+        ownerId,
+        engineId,
+        targetUserId
+      );
 
       if (result.success) {
         res.json({ success: true, message: result.message });
@@ -175,8 +181,8 @@ router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
 
     // 合併
     const allEngines = [
-      ...ownEngines.map(e => ({ ...e, isOwner: true })),
-      ...sharedEngines.map(e => ({ ...e, isOwner: false }))
+      ...ownEngines.map((e) => ({ ...e, isOwner: true })),
+      ...sharedEngines.map((e) => ({ ...e, isOwner: false })),
     ];
 
     // 格式化

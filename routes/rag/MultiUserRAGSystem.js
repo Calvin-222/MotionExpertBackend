@@ -83,8 +83,8 @@ class MultiUserRAGSystem {
   // async canUserAccessRAG(userId, ragId) {
   //   try {
   //     const query = `
-  //       SELECT COUNT(*) as count 
-  //       FROM rag 
+  //       SELECT COUNT(*) as count
+  //       FROM rag
   //       WHERE ragid = ? AND userid = ?
   //     `;
 
@@ -98,32 +98,36 @@ class MultiUserRAGSystem {
   // }
 
   async canUserAccessRAG(ragId, userId) {
-  try {
-    // 查自己或被分享
-    const query = `
+    try {
+      // 查自己或被分享
+      const query = `
       SELECT COUNT(*) as count FROM rag WHERE ragid = ? AND userid = ?
       UNION ALL
       SELECT COUNT(*) as count FROM private_rag WHERE ragid = ? AND userid = ?
     `;
-    const [results] = await this.pool.execute(query, [ragId, userId, ragId, userId]);
-    return results.some(r => r.count > 0);
-  } catch (error) {
-    console.error("Error checking RAG access:", error);
-    return false;
+      const [results] = await this.pool.execute(query, [
+        ragId,
+        userId,
+        ragId,
+        userId,
+      ]);
+      return results.some((r) => r.count > 0);
+    } catch (error) {
+      console.error("Error checking RAG access:", error);
+      return false;
+    }
   }
-}
 
   // 🔧 從資料庫獲取 RAG Engine
   async getRAGEngineFromDB(ragId, userId) {
     try {
       // 先查自己擁有的
       const queryOwn = `
-        SELECT r.*, u.username 
+        SELECT r.*
         FROM rag r 
-        JOIN users u ON r.userid = u.userid 
-        WHERE r.ragid = ? AND r.userid = ?
+        WHERE r.ragid = ?
       `;
-      const [ownResults] = await this.pool.execute(queryOwn, [ragId, userId]);
+      const [ownResults] = await this.pool.execute(queryOwn, [ragId]);
       if (ownResults.length > 0) {
         return { success: true, ragEngine: ownResults[0] };
       }
@@ -136,7 +140,10 @@ class MultiUserRAGSystem {
         JOIN users u ON r.userid = u.userid
         WHERE pr.ragid = ? AND pr.userid = ?
       `;
-      const [sharedResults] = await this.pool.execute(queryShared, [ragId, userId]);
+      const [sharedResults] = await this.pool.execute(queryShared, [
+        ragId,
+        userId,
+      ]);
       if (sharedResults.length > 0) {
         return { success: true, ragEngine: sharedResults[0] };
       }
@@ -205,7 +212,7 @@ class MultiUserRAGSystem {
         userId,
         question,
         engineId,
-        (ragId, userId) => this.canUserAccessRAG(ragId, userId),
+        // (ragId, userId) => this.canUserAccessRAG(ragId, userId),
         (ragId) => this.getRAGEngineFromDB(ragId, userId)
       );
 

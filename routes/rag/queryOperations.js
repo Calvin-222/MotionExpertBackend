@@ -36,7 +36,6 @@ class QueryOperations {
     return await apiCall();
   }
 
-  // 💬 用戶專屬 RAG 查詢（修正版 - 使用資料庫權限檢查）
   async queryUserRAG(
     userId,
     question,
@@ -53,8 +52,10 @@ class QueryOperations {
         };
       }
 
+
       // 從資料庫獲取 RAG Engine 信息
       const engineResult = await getRAGEngineFromDB(targetRagId);
+      console.log(engineResult.success ? "RAG Engine found" : "RAG Engine not found");
       if (!engineResult.success) {
         return {
           success: false,
