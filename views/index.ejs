@@ -106,6 +106,8 @@
                 <th>可見性</th>
                 <th>建立日期</th>
                 <th>操作</th>
+                <th>操作</th>
+                <th>分享</th> 
               </tr>
             </thead>
             <tbody id="enginesTableBody"></tbody>
@@ -395,39 +397,81 @@
       }
       
       // 填充引擎表格
-      function populateEnginesTable(engines) {
-        const tableBody = document.getElementById('enginesTableBody');
-        tableBody.innerHTML = '';
-        
-        engines.forEach(function(engine) {
-          const row = document.createElement('tr');
-          
-          const idCell = document.createElement('td');
-          idCell.textContent = engine.id;
-          row.appendChild(idCell);
-          
-          const nameCell = document.createElement('td');
-          nameCell.textContent = engine.name;
-          row.appendChild(nameCell);
-          
-          const visibilityCell = document.createElement('td');
-          visibilityCell.textContent = engine.visibility || 'private';
-          row.appendChild(visibilityCell);
-          
-          const createdAtCell = document.createElement('td');
-          createdAtCell.textContent = new Date(engine.createdAt).toLocaleString();
-          row.appendChild(createdAtCell);
-          
-          const actionsCell = document.createElement('td');
-          const deleteBtn = document.createElement('button');
-          deleteBtn.textContent = '刪除';
-          deleteBtn.onclick = function() { deleteEngine(engine.id); };
-          actionsCell.appendChild(deleteBtn);
-          row.appendChild(actionsCell);
-          
-          tableBody.appendChild(row);
-        });
+     function populateEnginesTable(engines) {
+  const tableBody = document.getElementById('enginesTableBody');
+  tableBody.innerHTML = '';
+  
+  engines.forEach(function(engine) {
+    const row = document.createElement('tr');
+    
+    const idCell = document.createElement('td');
+    idCell.textContent = engine.id;
+    row.appendChild(idCell);
+    
+    const nameCell = document.createElement('td');
+    nameCell.textContent = engine.name;
+    row.appendChild(nameCell);
+    
+    const visibilityCell = document.createElement('td');
+    visibilityCell.textContent = engine.visibility || 'private';
+    row.appendChild(visibilityCell);
+    
+    const createdAtCell = document.createElement('td');
+    createdAtCell.textContent = new Date(engine.createdAt).toLocaleString();
+    row.appendChild(createdAtCell);
+    
+    const actionsCell = document.createElement('td');
+    const deleteBtn = document.createElement('button');
+    deleteBtn.textContent = '刪除';
+    deleteBtn.onclick = function() { deleteEngine(engine.id); };
+    actionsCell.appendChild(deleteBtn);
+    row.appendChild(actionsCell);
+
+    // 新增分享欄位
+    const shareCell = document.createElement('td');
+    const shareInput = document.createElement('input');
+    shareInput.type = 'text';
+    shareInput.placeholder = '對方 userId';
+    shareInput.style.width = '120px';
+    shareCell.appendChild(shareInput);
+
+    const shareBtn = document.createElement('button');
+    shareBtn.textContent = '分享';
+    shareBtn.onclick = async function() {
+      const targetUserId = shareInput.value.trim();
+      if (!targetUserId) {
+        alert('請輸入對方 userId');
+        return;
       }
+      shareBtn.disabled = true;
+      shareBtn.textContent = '分享中...';
+      try {
+        const response = await fetch('/api/rag/users/engines/' + engine.id + '/share', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + authToken,
+          },
+          body: JSON.stringify({ targetUserId: targetUserId }),
+        });
+        const data = await response.json();
+        if (data.success) {
+          alert('分享成功！');
+        } else {
+          alert('分享失敗: ' + data.error);
+        }
+      } catch (error) {
+        alert('分享錯誤: ' + error.message);
+      }
+      shareBtn.disabled = false;
+      shareBtn.textContent = '分享';
+    };
+    shareCell.appendChild(shareBtn);
+    row.appendChild(shareCell);
+
+    tableBody.appendChild(row);
+  });
+}
       
       // 填充引擎下拉選單
       function populateEngineSelects(engines) {

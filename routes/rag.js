@@ -78,13 +78,84 @@ router.post("/users/engines", authenticateToken, async (req, res) => {
   }
 });
 
+router.post(
+  "/users/engines/:engineId/share",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { engineId } = req.params;
+      const ownerId = req.user.userId;
+      const { targetUserId } = req.body;
+
+      if (!targetUserId) {
+        return res.status(400).json({ success: false, error: "targetUserId is required" });
+      }
+
+      const EngineManagement = require("./rag/engineManagement");
+      const engineMgmt = new EngineManagement();
+      const result = await engineMgmt.shareRAGEngineToUser(ownerId, engineId, targetUserId);
+
+      if (result.success) {
+        res.json({ success: true, message: result.message });
+      } else {
+        res.status(400).json({ success: false, error: result.error });
+      }
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
+    }
+  }
+);
+
 // 📋 獲取用戶 RAG Engines 列表
+// router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
+//   try {
+//     const requestingUserId = req.user.userId;
+//     const targetUserId = req.params.userId;
+
+//     // 確保用戶只能訪問自己的 engines
+//     if (requestingUserId !== targetUserId) {
+//       return res.status(403).json({
+//         success: false,
+//         error: "您只能訪問自己的 RAG Engines",
+//       });
+//     }
+
+//     console.log(`📋 Getting RAG engines for user: ${targetUserId}`);
+
+//     const engines = await ragSystem.getUserRAGEngines(targetUserId);
+
+//     // 格式化 engines 數據以符合測試期望
+//     const formattedEngines = engines.map((engine) => ({
+//       id: engine.ragid,
+//       name: engine.ragname,
+//       displayName: engine.ragname,
+//       ragName: engine.ragname,
+//       visibility: engine.visibility,
+//       createdAt: engine.created_at,
+//       updatedAt: engine.updated_at,
+//     }));
+
+//     res.json({
+//       success: true,
+//       engines: formattedEngines,
+//       totalEngines: formattedEngines.length,
+//       userId: targetUserId,
+//       timestamp: new Date().toISOString(),
+//     });
+//   } catch (error) {
+//     console.error("Get user engines error:", error);
+//     res.status(500).json({
+//       success: false,
+//       error: "Failed to get user engines",
+//     });
+//   }
+// });
+
 router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
   try {
     const requestingUserId = req.user.userId;
     const targetUserId = req.params.userId;
 
-    // 確保用戶只能訪問自己的 engines
     if (requestingUserId !== targetUserId) {
       return res.status(403).json({
         success: false,
@@ -92,12 +163,24 @@ router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
       });
     }
 
-    console.log(`📋 Getting RAG engines for user: ${targetUserId}`);
+    // 查詢自己擁有的 engines
+    const ownEngines = await ragSystem.getUserRAGEngines(targetUserId);
 
-    const engines = await ragSystem.getUserRAGEngines(targetUserId);
+    // 查詢被分享給我的 engines
+    const [sharedRows] = await ragSystem.pool.execute(
+      `SELECT r.* FROM private_rag pr JOIN rag r ON pr.ragid = r.ragid WHERE pr.userid = ?`,
+      [targetUserId]
+    );
+    const sharedEngines = sharedRows || [];
 
-    // 格式化 engines 數據以符合測試期望
-    const formattedEngines = engines.map((engine) => ({
+    // 合併
+    const allEngines = [
+      ...ownEngines.map(e => ({ ...e, isOwner: true })),
+      ...sharedEngines.map(e => ({ ...e, isOwner: false }))
+    ];
+
+    // 格式化
+    const formattedEngines = allEngines.map((engine) => ({
       id: engine.ragid,
       name: engine.ragname,
       displayName: engine.ragname,
@@ -105,6 +188,7 @@ router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
       visibility: engine.visibility,
       createdAt: engine.created_at,
       updatedAt: engine.updated_at,
+      isOwner: engine.isOwner,
     }));
 
     res.json({

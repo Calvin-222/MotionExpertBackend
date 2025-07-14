@@ -826,6 +826,37 @@ class EngineManagement {
       };
     }
   }
+  async shareRAGEngineToUser(ownerId, ragId, targetUserId) {
+    try {
+      // 檢查 owner 是否真的擁有這個 engine
+      const [rows] = await this.db.execute(
+        "SELECT * FROM rag WHERE ragid = ? AND userid = ?",
+        [ragId, ownerId]
+      );
+      if (rows.length === 0) {
+        return { success: false, error: "您沒有權限分享此 RAG Engine" };
+      }
+
+      // 檢查是否已經分享過
+      const [existing] = await this.db.execute(
+        "SELECT * FROM private_rag WHERE ragid = ? AND userid = ?",
+        [ragId, targetUserId]
+      );
+      if (existing.length > 0) {
+        return { success: false, error: "已經分享給此用戶" };
+      }
+
+      // 執行分享
+      await this.db.execute(
+        "INSERT INTO private_rag (ragid, userid) VALUES (?, ?)",
+        [ragId, targetUserId]
+      );
+      return { success: true, message: "RAG Engine 已成功分享" };
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
 }
 
 module.exports = EngineManagement;
