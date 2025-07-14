@@ -98,34 +98,36 @@ class MultiUserRAGSystem {
   }
 
   // 🔧 從資料庫獲取 RAG Engine
-  async getRAGEngineFromDB(ragId) {
+  async getRAGEngineFromDB(ragId, userId) {
     try {
-      const query = `
+      // 先查自己擁有的
+      const queryOwn = `
         SELECT r.*, u.username 
         FROM rag r 
         JOIN users u ON r.userid = u.userid 
-        WHERE r.ragid = ?
+        WHERE r.ragid = ? AND r.userid = ?
       `;
-
-      const [results] = await this.pool.execute(query, [ragId]);
-
-      if (results.length > 0) {
-        return {
-          success: true,
-          ragEngine: results[0],
-        };
-      } else {
-        return {
-          success: false,
-          error: "RAG Engine not found",
-        };
+      const [ownResults] = await this.pool.execute(queryOwn, [ragId, userId]);
+      if (ownResults.length > 0) {
+        return { success: true, ragEngine: ownResults[0] };
       }
+
+      // 查被分享的
+      const queryShared = `
+        SELECT r.*, u.username 
+        FROM private_rag pr
+        JOIN rag r ON pr.ragid = r.ragid
+        JOIN users u ON r.userid = u.userid
+        WHERE pr.ragid = ? AND pr.userid = ?
+      `;
+      const [sharedResults] = await this.pool.execute(queryShared, [ragId, userId]);
+      if (sharedResults.length > 0) {
+        return { success: true, ragEngine: sharedResults[0] };
+      }
+
+      return { success: false, error: "找不到指定的 RAG Engine" };
     } catch (error) {
-      console.error("Error getting RAG engine from DB:", error);
-      return {
-        success: false,
-        error: error.message,
-      };
+      return { success: false, error: error.message };
     }
   }
 
