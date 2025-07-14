@@ -136,9 +136,9 @@ class FileOperations {
       const importRequest = {
         importRagFilesConfig: {
           gcsSource: {
-            uris: importConfig.gcs_source.uris
-          }
-        }
+            uris: importConfig.gcs_source.uris,
+          },
+        },
       };
 
       console.log(
@@ -365,12 +365,11 @@ class FileOperations {
     }
   }
 
-  // 🗑️ 刪除用戶文檔（改进版 - 使用資料庫權限檢查）
+  // 🗑️ 智能文檔刪除 - 處理資料庫與 RAG Engine 不同步的情況
   async deleteUserDocument(userId, ragFileId, ragId = null, canUserAccessRAG) {
     try {
       let targetRagId = ragId;
 
-      // 如果沒有提供 ragId，嘗試從用戶的 RAG Engine 中查找
       if (!targetRagId) {
         console.log("No ragId provided, need to implement engine lookup");
         return {
@@ -388,166 +387,366 @@ class FileOperations {
         };
       }
 
+      console.log(
+        `🗑️ User ${userId} deleting document ${ragFileId} from RAG ${targetRagId}`
+      );
+
+      // 🔧 第一步：先檢查資料庫中是否有此檔案記錄
+      const dbCheckQuery = `
+        SELECT fileid, filename FROM rag_file_name 
+        WHERE ragid = ? AND fileid = ?
+      `;
+      const [dbFiles] = await this.db.execute(dbCheckQuery, [
+        targetRagId,
+        ragFileId,
+      ]);
+
+      const fileExistsInDB = dbFiles.length > 0;
+      console.log(`📋 檔案在資料庫中存在: ${fileExistsInDB}`);
+
+      if (fileExistsInDB) {
+        console.log(`📄 資料庫檔案記錄: ${dbFiles[0].filename}`);
+      }
+
+      // 🔧 第二步：檢查 Google RAG Engine 中的檔案
       const authClient = await this.auth.getClient();
       const accessToken = await authClient.getAccessToken();
 
       const corpusName = `projects/${this.projectId}/locations/${this.location}/ragCorpora/${targetRagId}`;
-      const deleteUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles/${ragFileId}`;
+      const listUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles`;
 
-      console.log(`🗑️ Deleting document: ${ragFileId} from ${corpusName}`);
-      console.log(`🔗 Delete URL: ${deleteUrl}`);
-
-      // 🔧 改進的刪除邏輯 - 添加詳細錯誤處理
-      let deleteSuccess = false;
-      let deleteError = null;
+      let actualFileId = null;
+      let fileExistsInRAG = false;
 
       try {
-        const response = await axios.delete(deleteUrl, {
+        // 列出 RAG Engine 中的所有檔案
+        const listResponse = await axios.get(listUrl, {
           headers: {
             Authorization: `Bearer ${accessToken.token}`,
             "Content-Type": "application/json",
           },
-          timeout: 30000, // 30秒超時
+          timeout: 30000,
         });
 
-        console.log(`✅ RAG delete response status: ${response.status}`);
-        console.log(`✅ RAG delete response data:`, response.data);
-        deleteSuccess = true;
+        const files = listResponse.data.ragFiles || [];
+        console.log(`📋 RAG Engine 中找到 ${files.length} 個檔案`);
 
-        // 🆕 驗證文件是否真的被刪除
-        console.log(`🔍 Verifying file deletion...`);
-        await new Promise(resolve => setTimeout(resolve, 3000)); // 等待3秒
+        // 查找匹配的檔案
+        for (const file of files) {
+          const fileIdFromPath = file.name.split("/").pop();
+          console.log(`📄 檢查檔案: ${fileIdFromPath} (${file.displayName})`);
 
+          if (
+            fileIdFromPath === ragFileId ||
+            file.name.includes(ragFileId) ||
+            ragFileId.includes(fileIdFromPath)
+          ) {
+            actualFileId = fileIdFromPath;
+            fileExistsInRAG = true;
+            console.log(`✅ 在 RAG Engine 中找到匹配檔案: ${actualFileId}`);
+            break;
+          }
+        }
+      } catch (listError) {
+        console.error(`❌ 無法列出 RAG Engine 檔案:`, listError.response?.data);
+        // 如果列表檔案失敗，我們仍然可以嘗試刪除
+      }
+
+      console.log(`📊 檔案狀態檢查結果:`);
+      console.log(`   - 資料庫中存在: ${fileExistsInDB}`);
+      console.log(`   - RAG Engine 中存在: ${fileExistsInRAG}`);
+
+      let ragDeleteSuccess = false;
+      let dbDeleteSuccess = false;
+      let gcsDeleteSuccess = false;
+
+      // 🗑️ 第三步：如果檔案在 RAG Engine 中存在，則刪除
+      if (fileExistsInRAG && actualFileId) {
         try {
-          const verifyUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles`;
-          const verifyResponse = await axios.get(verifyUrl, {
+          const deleteUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles/${actualFileId}`;
+          console.log(`🗑️ 從 RAG Engine 刪除檔案: ${deleteUrl}`);
+
+          const response = await axios.delete(deleteUrl, {
             headers: {
               Authorization: `Bearer ${accessToken.token}`,
               "Content-Type": "application/json",
             },
+            timeout: 30000,
           });
 
-          const remainingFiles = verifyResponse.data.ragFiles || [];
-          const stillExists = remainingFiles.some(f => f.name && f.name.includes(ragFileId));
+          console.log(`✅ RAG Engine 刪除成功: ${response.status}`);
+          ragDeleteSuccess = true;
+        } catch (deleteError) {
+          console.error(`❌ RAG Engine 刪除失敗:`, deleteError.response?.data);
 
-          if (stillExists) {
-            console.log(`⚠️ File ${ragFileId} still exists in RAG Engine after deletion`);
-            deleteSuccess = false;
-            deleteError = "File still exists in RAG Engine after deletion attempt";
-          } else {
-            console.log(`✅ File ${ragFileId} successfully removed from RAG Engine`);
+          // 如果是 404 錯誤，表示檔案已經不存在
+          if (deleteError.response?.status === 404) {
+            console.log(`📝 檔案已經不存在於 RAG Engine 中 (404)`);
+            ragDeleteSuccess = true;
           }
-        } catch (verifyError) {
-          console.log(`⚠️ Could not verify file deletion:`, verifyError.message);
-          // 不將驗證錯誤視為刪除失敗，因為可能是權限問題
         }
-
-      } catch (apiError) {
-        console.error(`❌ RAG delete API failed:`, {
-          status: apiError.response?.status,
-          statusText: apiError.response?.statusText,
-          data: apiError.response?.data,
-          message: apiError.message
-        });
-
-        deleteSuccess = false;
-        deleteError = apiError.response?.data || apiError.message;
-
-        // 如果是404錯誤，可能文件已經不存在了
-        if (apiError.response?.status === 404) {
-          console.log(`📝 File ${ragFileId} not found in RAG Engine (404) - treating as already deleted`);
-          deleteSuccess = true;
-          deleteError = null;
-        }
+      } else {
+        console.log(`📝 檔案不存在於 RAG Engine 中，跳過 RAG 刪除`);
+        ragDeleteSuccess = true; // 不存在就算成功
       }
 
-      // 🆕 從資料庫中刪除文檔記錄（只有在RAG刪除成功時才執行）
-      if (deleteSuccess) {
+      // 🗑️ 第四步：從資料庫刪除記錄
+      if (fileExistsInDB) {
         try {
-          const deleteQuery = `
-            DELETE FROM rag_file_name 
-            WHERE ragid = ? AND fileid = ?
-          `;
+          const deleteQuery = `DELETE FROM rag_file_name WHERE ragid = ? AND fileid = ?`;
           await this.db.execute(deleteQuery, [targetRagId, ragFileId]);
-          console.log(`✅ File mapping deleted from database`);
+          console.log(`✅ 資料庫記錄刪除成功`);
+          dbDeleteSuccess = true;
         } catch (dbError) {
-          console.log(`⚠️ Database deletion warning:`, dbError.message);
-          // 數據庫錯誤不應該影響整體成功狀態，因為RAG已經刪除成功
+          console.error(`❌ 資料庫刪除失敗:`, dbError.message);
         }
+      } else {
+        console.log(`📝 檔案不存在於資料庫中，跳過資料庫刪除`);
+        dbDeleteSuccess = true; // 不存在就算成功
+      }
 
-        // 🆕 嘗試從 Google Cloud Storage 刪除檔案
-        try {
-          // 首先嘗試獲取文件名映射以確定正確的文件路徑
-          const fileMapping = await this.getFileNameMapping(targetRagId);
-          let fileName = null;
-          
-          if (fileMapping.success && fileMapping.mapping[ragFileId]) {
-            // 使用映射中的文件名構建路徑
-            const originalName = fileMapping.mapping[ragFileId];
-            const fileExtension = originalName.split(".").pop() || 'txt';
-            fileName = `user-data/${userId}/${ragFileId}.${fileExtension}`;
+      // 🗑️ 第五步：嘗試從 Google Cloud Storage 刪除檔案
+      try {
+        if (fileExistsInDB && dbFiles[0].filename) {
+          const originalName = dbFiles[0].filename;
+          const fileExtension = originalName.split(".").pop() || "txt";
+          const fileName = `user-data/${userId}/${ragFileId}.${fileExtension}`;
+
+          const file = this.storage.bucket(this.bucketName).file(fileName);
+          const [exists] = await file.exists();
+
+          if (exists) {
+            await file.delete();
+            console.log(`✅ GCS 檔案刪除成功: ${fileName}`);
+            gcsDeleteSuccess = true;
           } else {
-            // 備用：嘗試常見的文件擴展名
-            const extensions = ['txt', 'pdf', 'doc', 'docx'];
-            for (const ext of extensions) {
-              const testFileName = `user-data/${userId}/${ragFileId}.${ext}`;
-              try {
-                const file = this.storage.bucket(this.bucketName).file(testFileName);
-                const [exists] = await file.exists();
-                if (exists) {
-                  fileName = testFileName;
-                  break;
-                }
-              } catch (checkError) {
-                // 繼續檢查其他擴展名
-              }
-            }
+            console.log(`📝 GCS 檔案不存在: ${fileName}`);
+            gcsDeleteSuccess = true;
           }
-          
-          if (fileName) {
-            await this.storage.bucket(this.bucketName).file(fileName).delete();
-            console.log(`✅ File deleted from GCS: ${fileName}`);
-          } else {
-            console.log(`⚠️ Could not find GCS file to delete for ragFileId: ${ragFileId}`);
-          }
-        } catch (gcsError) {
-          console.log(`⚠️ GCS file deletion warning:`, gcsError.message);
         }
+      } catch (gcsError) {
+        console.log(`⚠️ GCS 檔案刪除警告:`, gcsError.message);
+        gcsDeleteSuccess = true; // GCS 錯誤不應該影響整體結果
+      }
 
+      // 🎯 判斷整體刪除結果
+      const overallSuccess = ragDeleteSuccess && dbDeleteSuccess;
+
+      if (overallSuccess) {
         return {
           success: true,
           message: "文檔已成功刪除",
           deletedFileId: ragFileId,
           ragId: targetRagId,
+          details: {
+            ragDeleted: ragDeleteSuccess,
+            dbDeleted: dbDeleteSuccess,
+            gcsDeleted: gcsDeleteSuccess,
+            existedInRAG: fileExistsInRAG,
+            existedInDB: fileExistsInDB,
+          },
         };
       } else {
-        // RAG 刪除失敗
         return {
           success: false,
-          error: deleteError || "無法從 RAG Engine 刪除文檔",
+          error: "檔案刪除部分失敗",
           details: {
-            ragFileId: ragFileId,
-            corpusName: corpusName,
-            deleteUrl: deleteUrl
-          }
+            ragDeleted: ragDeleteSuccess,
+            dbDeleted: dbDeleteSuccess,
+            gcsDeleted: gcsDeleteSuccess,
+            existedInRAG: fileExistsInRAG,
+            existedInDB: fileExistsInDB,
+          },
         };
       }
     } catch (error) {
-      console.error(`❌ Failed to delete document ${ragFileId}:`);
-      console.error("Error details:", {
-        message: error.message,
-        response: error.response?.data,
-        status: error.response?.status,
-      });
-
+      console.error(`❌ 刪除檔案時發生錯誤:`, error);
       return {
         success: false,
-        error: error.response?.data || error.message,
+        error: error.message,
       };
     }
   }
 
   // 📤 用戶文檔上傳到專屬 RAG（修正版 - 使用資料庫和統一命名）
+  // async uploadToUserRAG(
+  //   userId,
+  //   file,
+  //   fileName,
+  //   ragId = null,
+  //   createUserRAGEngine,
+  //   getRAGEngineFromDB
+  // ) {
+  //   try {
+  //     let userEngine;
+
+  //     if (ragId) {
+  //       // 使用指定的 RAG Engine
+  //       console.log(`📤 Using specified RAG Engine: ${ragId}`);
+  //       const engineResult = await getRAGEngineFromDB(ragId);
+
+  //       if (!engineResult.success) {
+  //         return {
+  //           success: false,
+  //           error: `指定的 RAG Engine 不存在: ${ragId}`,
+  //         };
+  //       }
+
+  //       userEngine = {
+  //         id: ragId,
+  //         fullName: `projects/${this.projectId}/locations/${this.location}/ragCorpora/${ragId}`,
+  //         displayName: engineResult.ragEngine.ragname,
+  //         ragName: engineResult.ragEngine.ragname,
+  //       };
+  //     } else {
+  //       // 🔧 先檢查用戶是否已有 RAG Engine，如果有則使用，沒有才創建
+  //       console.log(`📤 Checking for existing RAG Engine for user: ${userId}`);
+
+  //       // 先嘗試獲取用戶現有的 RAG Engine
+  //       const existingEngineQuery = `
+  //         SELECT ragid, ragname, visibility 
+  //         FROM rag 
+  //         WHERE userid = ? 
+  //         ORDER BY created_at DESC 
+  //         LIMIT 1
+  //       `;
+  //       const [existingEngines] = await this.db.execute(existingEngineQuery, [
+  //         userId,
+  //       ]);
+
+  //       if (existingEngines.length > 0) {
+  //         // 使用現有的 RAG Engine
+  //         const existing = existingEngines[0];
+  //         console.log(`📤 Using existing RAG Engine: ${existing.ragid}`);
+
+  //         userEngine = {
+  //           id: existing.ragid,
+  //           fullName: `projects/${this.projectId}/locations/${this.location}/ragCorpora/${existing.ragid}`,
+  //           displayName: existing.ragname,
+  //           ragName: existing.ragname,
+  //         };
+  //       } else {
+  //         // 創建新的 RAG Engine
+  //         console.log(`📤 Creating new default RAG Engine for user: ${userId}`);
+  //         const engineResult = await createUserRAGEngine(
+  //           userId,
+  //           null, // 使用默認名稱
+  //           `Default RAG for user ${userId}`,
+  //           "private"
+  //         );
+
+  //         if (!engineResult.success) {
+  //           return {
+  //             success: false,
+  //             error: engineResult.userMessage || "無法創建 RAG Engine",
+  //             details: engineResult,
+  //           };
+  //         }
+
+  //         userEngine = {
+  //           id: engineResult.corpusId,
+  //           fullName: engineResult.corpusName,
+  //           displayName: engineResult.displayName,
+  //           ragName: engineResult.ragName,
+  //         };
+  //       }
+  //     }
+
+  //     console.log(`📤 Uploading to RAG Engine: ${userEngine.id}`);
+
+  //     // 🆕 先保存文件名到資料庫，獲取生成的 fileid
+  //     let generatedFileId = null;
+  //     try {
+  //       const insertFileQuery = `
+  //         INSERT INTO rag_file_name (ragid, filename) 
+  //         VALUES (?, ?)
+  //       `;
+  //       const [insertResult] = await this.db.execute(insertFileQuery, [
+  //         userEngine.id,
+  //         fileName,
+  //       ]);
+
+  //       // 獲取剛插入的記錄以取得生成的 fileid
+  //       const getFileQuery = `
+  //         SELECT fileid FROM rag_file_name 
+  //         WHERE ragid = ? AND filename = ? 
+  //         ORDER BY created_at DESC LIMIT 1
+  //       `;
+  //       const [fileResults] = await this.db.execute(getFileQuery, [
+  //         userEngine.id,
+  //         fileName,
+  //       ]);
+
+  //       if (fileResults.length > 0) {
+  //         generatedFileId = fileResults[0].fileid;
+  //         console.log(`✅ Generated file ID: ${generatedFileId}`);
+  //       } else {
+  //         throw new Error("Failed to get generated file ID");
+  //       }
+  //     } catch (dbError) {
+  //       console.error("❌ Database error saving filename:", dbError.message);
+  //       throw new Error(`Database error: ${dbError.message}`);
+  //     }
+
+  //     // 🆕 使用生成的 fileid 作為文件名，保留原始擴展名
+  //     const fileExtension = fileName.split(".").pop();
+  //     const newFileName = `${generatedFileId}.${fileExtension}`;
+
+  //     // 上傳文件到 Google Cloud Storage
+  //     const userBucketPath = `user-data/${userId}/${newFileName}`;
+  //     const uploadResult = await this.uploadFileToEngine(
+  //       userEngine.fullName,
+  //       userId,
+  //       file.content || file, // 🔧 確保傳遞正確的內容
+  //       newFileName
+  //     );
+
+  //     if (!uploadResult.success) {
+  //       return uploadResult;
+  //     }
+
+  //     // 導入文件到 RAG Engine
+  //     const importResult = await this.importFileToRAG(
+  //       userEngine.fullName,
+  //       uploadResult.bucketPath
+  //     );
+
+  //     console.log(`✅ Upload completed for user ${userId}`);
+
+  //     return {
+  //       success: true,
+  //       userId: userId,
+  //       fileName: fileName,
+  //       newFileName: newFileName, // 🆕 新增
+  //       generatedFileId: generatedFileId, // 🆕 新增
+  //       displayName: fileName, // 顯示原始文件名
+  //       bucketPath: `gs://${this.bucketName}/${userBucketPath}`,
+  //       ragEngine: {
+  //         id: userEngine.id,
+  //         name: userEngine.fullName,
+  //         displayName: userEngine.displayName,
+  //         ragName: userEngine.ragName,
+  //         fileName: fileName,
+  //         newFileName: newFileName, // 🆕 新增
+  //       },
+  //       importResult: importResult,
+  //     };
+  //   } catch (error) {
+  //     console.error(`❌ Failed to upload to user RAG for ${userId}:`);
+  //     console.error("Error details:", error.message);
+  //     return {
+  //       success: false,
+  //       error: error.message,
+  //     };
+  //   }
+  // }
+
+
+    /**
+   * 用戶文檔上傳到專屬 RAG（修正版）
+   * - 整合了資料庫命名
+   * - 增加了等待 Google Cloud 異步導入操作完成的機制
+   */
   async uploadToUserRAG(
     userId,
     file,
@@ -559,6 +758,7 @@ class FileOperations {
     try {
       let userEngine;
 
+      // --- [第一步：確定要使用的 RAG Engine] ---
       if (ragId) {
         // 使用指定的 RAG Engine
         console.log(`📤 Using specified RAG Engine: ${ragId}`);
@@ -578,10 +778,8 @@ class FileOperations {
           ragName: engineResult.ragEngine.ragname,
         };
       } else {
-        // 🔧 先檢查用戶是否已有 RAG Engine，如果有則使用，沒有才創建
+        // 如果未指定，則查找或創建一個默認的 Engine
         console.log(`📤 Checking for existing RAG Engine for user: ${userId}`);
-
-        // 先嘗試獲取用戶現有的 RAG Engine
         const existingEngineQuery = `
           SELECT ragid, ragname, visibility 
           FROM rag 
@@ -594,10 +792,8 @@ class FileOperations {
         ]);
 
         if (existingEngines.length > 0) {
-          // 使用現有的 RAG Engine
           const existing = existingEngines[0];
           console.log(`📤 Using existing RAG Engine: ${existing.ragid}`);
-
           userEngine = {
             id: existing.ragid,
             fullName: `projects/${this.projectId}/locations/${this.location}/ragCorpora/${existing.ragid}`,
@@ -605,15 +801,10 @@ class FileOperations {
             ragName: existing.ragname,
           };
         } else {
-          // 創建新的 RAG Engine
           console.log(`📤 Creating new default RAG Engine for user: ${userId}`);
           const engineResult = await createUserRAGEngine(
-            userId,
-            null, // 使用默認名稱
-            `Default RAG for user ${userId}`,
-            "private"
+            userId, null, `Default RAG for user ${userId}`, "private"
           );
-
           if (!engineResult.success) {
             return {
               success: false,
@@ -621,7 +812,6 @@ class FileOperations {
               details: engineResult,
             };
           }
-
           userEngine = {
             id: engineResult.corpusId,
             fullName: engineResult.corpusName,
@@ -631,91 +821,116 @@ class FileOperations {
         }
       }
 
-      console.log(`📤 Uploading to RAG Engine: ${userEngine.id}`);
+      console.log(`📤 Uploading to RAG Engine: ${userEngine.id} (${userEngine.displayName})`);
 
-      // 🆕 先保存文件名到資料庫，獲取生成的 fileid
+      // --- [第二步：在資料庫中創建檔案紀錄，並生成唯一檔名] ---
       let generatedFileId = null;
       try {
-        const insertFileQuery = `
-          INSERT INTO rag_file_name (ragid, filename) 
-          VALUES (?, ?)
-        `;
-        const [insertResult] = await this.db.execute(insertFileQuery, [
-          userEngine.id,
-          fileName,
-        ]);
+        const insertFileQuery = `INSERT INTO rag_file_name (ragid, filename) VALUES (?, ?)`;
+        await this.db.execute(insertFileQuery, [userEngine.id, fileName]);
 
-        // 獲取剛插入的記錄以取得生成的 fileid
-        const getFileQuery = `
-          SELECT fileid FROM rag_file_name 
-          WHERE ragid = ? AND filename = ? 
-          ORDER BY created_at DESC LIMIT 1
-        `;
-        const [fileResults] = await this.db.execute(getFileQuery, [
-          userEngine.id,
-          fileName,
-        ]);
+        const getFileQuery = `SELECT fileid FROM rag_file_name WHERE ragid = ? AND filename = ? ORDER BY created_at DESC LIMIT 1`;
+        const [fileResults] = await this.db.execute(getFileQuery, [userEngine.id, fileName]);
 
         if (fileResults.length > 0) {
           generatedFileId = fileResults[0].fileid;
-          console.log(`✅ Generated file ID: ${generatedFileId}`);
+          console.log(`✅ Generated file ID from DB: ${generatedFileId}`);
         } else {
-          throw new Error("Failed to get generated file ID");
+          throw new Error("Failed to get generated file ID from database after insertion.");
         }
       } catch (dbError) {
-        console.error("❌ Database error saving filename:", dbError.message);
-        throw new Error(`Database error: ${dbError.message}`);
+        console.error("❌ Database error during file record creation:", dbError.message);
+        return { success: false, error: `資料庫操作失敗: ${dbError.message}` };
       }
 
-      // 🆕 使用生成的 fileid 作為文件名，保留原始擴展名
-      const fileExtension = fileName.split(".").pop();
+      const fileExtension = fileName.split(".").pop() || 'tmp';
       const newFileName = `${generatedFileId}.${fileExtension}`;
 
-      // 上傳文件到 Google Cloud Storage
+      // --- [第三步：上傳檔案到 Google Cloud Storage] ---
       const userBucketPath = `user-data/${userId}/${newFileName}`;
       const uploadResult = await this.uploadFileToEngine(
         userEngine.fullName,
         userId,
-        file.content || file, // 🔧 確保傳遞正確的內容
+        file.content || file.buffer || file, // 確保傳遞正確的內容
         newFileName
       );
 
       if (!uploadResult.success) {
+        // 如果上傳 GCS 失敗，最好刪除剛剛建立的資料庫紀錄以保持一致性
+        await this.db.execute(`DELETE FROM rag_file_name WHERE fileid = ?`, [generatedFileId]);
+        console.log(`↩️ Rolled back database record for file ID: ${generatedFileId}`);
         return uploadResult;
       }
 
-      // 導入文件到 RAG Engine
+      // --- [第四步：啟動 Google Cloud RAG 導入操作] ---
       const importResult = await this.importFileToRAG(
         userEngine.fullName,
         uploadResult.bucketPath
       );
 
-      console.log(`✅ Upload completed for user ${userId}`);
+      // --- [第五步：【核心修改】等待異步操作完成] ---
 
+      // 1. 檢查導入操作是否成功啟動
+      if (!importResult.success || !importResult.operationName) {
+        console.error("❌ Failed to start RAG import operation:", importResult.error);
+        // 可選：清理已上傳的 GCS 檔案和資料庫紀錄
+        // await this.storage.bucket(this.bucketName).file(userBucketPath).delete();
+        // await this.db.execute(`DELETE FROM rag_file_name WHERE fileid = ?`, [generatedFileId]);
+        return {
+          success: false,
+          error: "無法啟動 RAG 引擎導入操作，上傳已取消。",
+          details: importResult.error,
+        };
+      }
+
+      // 2. 等待長時間運行的導入操作完成 (設置 2 分鐘超時)
+      console.log(`⏳ Waiting for import operation to complete: ${importResult.operationName}`);
+      const completionResult = await this.waitForImportCompletion(
+        importResult.operationName,
+        120000 
+      );
+
+      // 3. 檢查操作的最終結果
+      if (!completionResult.success || (completionResult.operationStatus && completionResult.operationStatus.error)) {
+        const completionError = completionResult.error || completionResult.operationStatus.error;
+        console.error("❌ RAG import operation failed after waiting:", completionError);
+        return {
+          success: false,
+          error: "檔案已上傳至雲端，但導入 RAG 引擎時發生錯誤。",
+          details: completionError,
+          bucketPath: uploadResult.bucketPath,
+        };
+      }
+
+      // 4. 如果一切順利，表示導入真正完成
+      console.log(`✅✅✅ File '${fileName}' successfully uploaded and imported into RAG Engine.`);
+
+      // --- [第六步：返回最終成功結果] ---
       return {
         success: true,
+        message: "文件已成功上傳並導入 RAG Engine。",
         userId: userId,
         fileName: fileName,
-        newFileName: newFileName, // 🆕 新增
-        generatedFileId: generatedFileId, // 🆕 新增
-        displayName: fileName, // 顯示原始文件名
-        bucketPath: `gs://${this.bucketName}/${userBucketPath}`,
+        newFileName: newFileName,
+        generatedFileId: generatedFileId,
+        displayName: fileName,
+        bucketPath: uploadResult.bucketPath,
         ragEngine: {
           id: userEngine.id,
           name: userEngine.fullName,
           displayName: userEngine.displayName,
           ragName: userEngine.ragName,
-          fileName: fileName,
-          newFileName: newFileName, // 🆕 新增
         },
-        importResult: importResult,
+        // 返回導入完成後的詳細資訊，而非僅是啟動時的資訊
+        importResult: completionResult,
       };
+
     } catch (error) {
-      console.error(`❌ Failed to upload to user RAG for ${userId}:`);
-      console.error("Error details:", error.message);
+      console.error(`❌ FATAL: An unexpected error occurred in uploadToUserRAG for user ${userId}:`);
+      console.error("Error details:", error);
       return {
         success: false,
-        error: error.message,
+        error: `上傳過程中發生意外錯誤: ${error.message}`,
       };
     }
   }
@@ -767,15 +982,18 @@ class FileOperations {
       const importRequest = {
         importRagFilesConfig: {
           gcsSource: {
-            uris: [filePath]
-          }
-        }
+            uris: [filePath],
+          },
+        },
       };
 
       const importUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles:import`;
 
       console.log(`📤 Import URL: ${importUrl}`);
-      console.log(`📄 Final import request:`, JSON.stringify(importRequest, null, 2));
+      console.log(
+        `📄 Final import request:`,
+        JSON.stringify(importRequest, null, 2)
+      );
 
       const response = await axios.post(importUrl, importRequest, {
         headers: {
@@ -813,8 +1031,10 @@ class FileOperations {
       console.error(`❌ Error Headers:`, error.response?.headers);
 
       // 詳細錯誤分析
-      const errorMessage = error.response?.data?.error?.message || error.message;
-      const errorCode = error.response?.data?.error?.code || error.response?.status;
+      const errorMessage =
+        error.response?.data?.error?.message || error.message;
+      const errorCode =
+        error.response?.data?.error?.code || error.response?.status;
 
       // 根據錯誤類型提供更好的錯誤信息
       let friendlyMessage = "檔案導入失敗";
@@ -839,7 +1059,9 @@ class FileOperations {
   // 📥 直接從文件內容導入到 RAG Engine（支援 JSON 格式的文件數組）
   async importFilesFromContent(userId, ragId, files) {
     try {
-      console.log(`📥 Direct import from content for user ${userId} to RAG ${ragId}`);
+      console.log(
+        `📥 Direct import from content for user ${userId} to RAG ${ragId}`
+      );
       console.log(`📁 Files to import: ${files.length}`);
 
       const results = [];
@@ -848,21 +1070,21 @@ class FileOperations {
       for (const file of files) {
         try {
           console.log(`📄 Processing file: ${file.name}`);
-          
+
           // 確保文件有內容
           if (!file.content) {
             results.push({
               name: file.name,
               success: false,
-              error: 'File content is empty'
+              error: "File content is empty",
             });
             continue;
           }
 
           // 轉換內容為 Buffer
-          const fileBuffer = Buffer.isBuffer(file.content) 
-            ? file.content 
-            : Buffer.from(file.content, 'utf-8');
+          const fileBuffer = Buffer.isBuffer(file.content)
+            ? file.content
+            : Buffer.from(file.content, "utf-8");
 
           // 🆕 先保存文件名到資料庫，獲取生成的 fileid
           let generatedFileId = null;
@@ -879,7 +1101,10 @@ class FileOperations {
               WHERE ragid = ? AND filename = ? 
               ORDER BY created_at DESC LIMIT 1
             `;
-            const [fileResults] = await this.db.execute(getFileQuery, [ragId, file.name]);
+            const [fileResults] = await this.db.execute(getFileQuery, [
+              ragId,
+              file.name,
+            ]);
 
             if (fileResults.length > 0) {
               generatedFileId = fileResults[0].fileid;
@@ -888,17 +1113,20 @@ class FileOperations {
               throw new Error("Failed to get generated file ID");
             }
           } catch (dbError) {
-            console.error("❌ Database error saving filename:", dbError.message);
+            console.error(
+              "❌ Database error saving filename:",
+              dbError.message
+            );
             results.push({
               name: file.name,
               success: false,
-              error: `Database error: ${dbError.message}`
+              error: `Database error: ${dbError.message}`,
             });
             continue;
           }
 
           // 🆕 使用生成的 fileid 作為文件名，保留原始擴展名
-          const fileExtension = file.name.split(".").pop() || 'txt';
+          const fileExtension = file.name.split(".").pop() || "txt";
           const newFileName = `${generatedFileId}.${fileExtension}`;
 
           // 上傳到 GCS
@@ -913,7 +1141,7 @@ class FileOperations {
             results.push({
               name: file.name,
               success: false,
-              error: uploadResult.error
+              error: uploadResult.error,
             });
             continue;
           }
@@ -930,25 +1158,25 @@ class FileOperations {
           // 🆕 如果導入成功且有操作名稱，等待完成並獲取實際文件ID
           if (importResult.success && importResult.operationName) {
             console.log(`⏳ Waiting for import operation to complete...`);
-            
+
             // 等待導入完成
             const completionResult = await this.waitForImportCompletion(
-              importResult.operationName, 
+              importResult.operationName,
               60000 // 1分鐘超時
             );
-            
+
             if (completionResult.success) {
               // 嘗試獲取實際的文件ID
               const fileIdResult = await this.getActualFileIdFromCorpus(
-                corpusName, 
+                corpusName,
                 file.name,
                 30000 // 30秒時間窗口
               );
-              
+
               if (fileIdResult.success) {
                 actualFileId = fileIdResult.fileId;
                 console.log(`✅ Got actual file ID: ${actualFileId}`);
-                
+
                 // 🆕 更新數據庫記錄以使用實際的文件ID
                 try {
                   const updateQuery = `
@@ -956,17 +1184,28 @@ class FileOperations {
                     SET fileid = ? 
                     WHERE ragid = ? AND fileid = ?
                   `;
-                  await this.db.execute(updateQuery, [actualFileId, ragId, generatedFileId]);
+                  await this.db.execute(updateQuery, [
+                    actualFileId,
+                    ragId,
+                    generatedFileId,
+                  ]);
                   console.log(`✅ Updated database with actual file ID`);
                 } catch (dbUpdateError) {
-                  console.error("❌ Failed to update file ID in database:", dbUpdateError.message);
+                  console.error(
+                    "❌ Failed to update file ID in database:",
+                    dbUpdateError.message
+                  );
                   updateError = `Database update failed: ${dbUpdateError.message}`;
                 }
               } else {
-                console.log(`⚠️ Could not get actual file ID: ${fileIdResult.error}`);
+                console.log(
+                  `⚠️ Could not get actual file ID: ${fileIdResult.error}`
+                );
               }
             } else {
-              console.log(`⚠️ Import operation not completed: ${completionResult.error}`);
+              console.log(
+                `⚠️ Import operation not completed: ${completionResult.error}`
+              );
             }
           }
 
@@ -979,20 +1218,22 @@ class FileOperations {
             bucketPath: uploadResult.bucketPath,
             importResult: importResult,
             updateError: updateError, // 🆕 添加更新錯誤信息
-            error: importResult.success ? updateError : importResult.error
+            error: importResult.success ? updateError : importResult.error,
           });
-
         } catch (fileError) {
-          console.error(`❌ Error processing file ${file.name}:`, fileError.message);
+          console.error(
+            `❌ Error processing file ${file.name}:`,
+            fileError.message
+          );
           results.push({
             name: file.name,
             success: false,
-            error: fileError.message
+            error: fileError.message,
           });
         }
       }
 
-      const successCount = results.filter(r => r.success).length;
+      const successCount = results.filter((r) => r.success).length;
       const failCount = results.length - successCount;
 
       return {
@@ -1002,16 +1243,15 @@ class FileOperations {
         summary: {
           total: files.length,
           success: successCount,
-          failed: failCount
-        }
+          failed: failCount,
+        },
       };
-
     } catch (error) {
       console.error(`❌ Failed to import files from content:`, error.message);
       return {
         success: false,
         error: error.message,
-        results: []
+        results: [],
       };
     }
   }
@@ -1020,105 +1260,120 @@ class FileOperations {
   async waitForImportCompletion(operationName, maxWaitTime = 180000) {
     try {
       const startTime = Date.now();
-      console.log(`⏳ Waiting for import operation to complete: ${operationName}`);
-      
+      console.log(
+        `⏳ Waiting for import operation to complete: ${operationName}`
+      );
+
       while (Date.now() - startTime < maxWaitTime) {
-        const statusResult = await this.checkImportOperationStatus(operationName);
-        
+        const statusResult = await this.checkImportOperationStatus(
+          operationName
+        );
+
         if (!statusResult.success) {
-          console.error(`❌ Failed to check operation status:`, statusResult.error);
+          console.error(
+            `❌ Failed to check operation status:`,
+            statusResult.error
+          );
           return { success: false, error: statusResult.error };
         }
-        
+
         if (statusResult.done) {
           if (statusResult.error) {
             console.error(`❌ Import operation failed:`, statusResult.error);
             return { success: false, error: statusResult.error };
           }
-          
+
           // 操作成功完成，嘗試提取文件ID
           if (statusResult.result && statusResult.result.ragFiles) {
             const importedFiles = statusResult.result.ragFiles;
-            console.log(`✅ Import completed with ${importedFiles.length} files`);
-            
+            console.log(
+              `✅ Import completed with ${importedFiles.length} files`
+            );
+
             return {
               success: true,
               importedFiles: importedFiles,
-              operationStatus: statusResult
+              operationStatus: statusResult,
             };
           } else {
             console.log(`✅ Import completed but no file details in response`);
             return {
               success: true,
               importedFiles: [],
-              operationStatus: statusResult
+              operationStatus: statusResult,
             };
           }
         }
-        
+
         console.log(`⏳ Operation still running, waiting 5 seconds...`);
-        await new Promise(resolve => setTimeout(resolve, 5000));
+        await new Promise((resolve) => setTimeout(resolve, 5000));
       }
-      
+
       // 超時
       console.log(`⏰ Import operation timed out after ${maxWaitTime}ms`);
       return {
         success: false,
         error: `Import operation timed out after ${maxWaitTime / 1000} seconds`,
-        timeout: true
+        timeout: true,
       };
-      
     } catch (error) {
       console.error(`❌ Error waiting for import completion:`, error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
 
   // 📍 獲取導入文件的實際Google Cloud文件ID
-  async getActualFileIdFromCorpus(corpusName, originalFileName, timeWindow = 30000) {
+  async getActualFileIdFromCorpus(
+    corpusName,
+    originalFileName,
+    timeWindow = 30000
+  ) {
     try {
-      console.log(`🔍 Looking for file "${originalFileName}" in corpus: ${corpusName}`);
-      
+      console.log(
+        `🔍 Looking for file "${originalFileName}" in corpus: ${corpusName}`
+      );
+
       const startTime = Date.now();
       while (Date.now() - startTime < timeWindow) {
         const documentsResult = await this.getUserDocuments(corpusName);
-        
+
         if (documentsResult.success && documentsResult.files.length > 0) {
           // 查找最近上傳的文件
-          const sortedFiles = documentsResult.files.sort((a, b) => 
-            new Date(b.uploadTime) - new Date(a.uploadTime)
+          const sortedFiles = documentsResult.files.sort(
+            (a, b) => new Date(b.uploadTime) - new Date(a.uploadTime)
           );
-          
+
           // 取最新的文件，假設它就是我們剛上傳的
           const latestFile = sortedFiles[0];
-          console.log(`📍 Found latest file: ${latestFile.id} (${latestFile.name})`);
-          
+          console.log(
+            `📍 Found latest file: ${latestFile.id} (${latestFile.name})`
+          );
+
           return {
             success: true,
             fileId: latestFile.id,
             fileName: latestFile.name,
-            uploadTime: latestFile.uploadTime
+            uploadTime: latestFile.uploadTime,
           };
         }
-        
+
         console.log(`⏳ No files found yet, waiting 3 seconds...`);
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        await new Promise((resolve) => setTimeout(resolve, 3000));
       }
-      
+
       console.log(`⏰ Could not find file within ${timeWindow / 1000} seconds`);
       return {
         success: false,
-        error: `Could not find imported file within time window`
+        error: `Could not find imported file within time window`,
       };
-      
     } catch (error) {
       console.error(`❌ Error getting actual file ID:`, error.message);
       return {
         success: false,
-        error: error.message
+        error: error.message,
       };
     }
   }
