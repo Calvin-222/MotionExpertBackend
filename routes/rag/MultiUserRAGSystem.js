@@ -80,22 +80,38 @@ class MultiUserRAGSystem {
   }
 
   // 🔧 檢查用戶是否可以訪問 RAG
-  async canUserAccessRAG(userId, ragId) {
-    try {
-      const query = `
-        SELECT COUNT(*) as count 
-        FROM rag 
-        WHERE ragid = ? AND userid = ?
-      `;
+  // async canUserAccessRAG(userId, ragId) {
+  //   try {
+  //     const query = `
+  //       SELECT COUNT(*) as count 
+  //       FROM rag 
+  //       WHERE ragid = ? AND userid = ?
+  //     `;
 
-      const [results] = await this.pool.execute(query, [ragId, userId]);
+  //     const [results] = await this.pool.execute(query, [ragId, userId]);
 
-      return results[0].count > 0;
-    } catch (error) {
-      console.error("Error checking RAG access:", error);
-      return false;
-    }
+  //     return results[0].count > 0;
+  //   } catch (error) {
+  //     console.error("Error checking RAG access:", error);
+  //     return false;
+  //   }
+  // }
+
+  async canUserAccessRAG(ragId, userId) {
+  try {
+    // 查自己或被分享
+    const query = `
+      SELECT COUNT(*) as count FROM rag WHERE ragid = ? AND userid = ?
+      UNION ALL
+      SELECT COUNT(*) as count FROM private_rag WHERE ragid = ? AND userid = ?
+    `;
+    const [results] = await this.pool.execute(query, [ragId, userId, ragId, userId]);
+    return results.some(r => r.count > 0);
+  } catch (error) {
+    console.error("Error checking RAG access:", error);
+    return false;
   }
+}
 
   // 🔧 從資料庫獲取 RAG Engine
   async getRAGEngineFromDB(ragId, userId) {
@@ -139,7 +155,7 @@ class MultiUserRAGSystem {
       );
 
       // 檢查用戶權限
-      const hasAccess = await this.canUserAccessRAG(userId, engineId);
+      const hasAccess = await this.canUserAccessRAG(engineId, userId);
       if (!hasAccess) {
         return {
           success: false,
@@ -189,8 +205,8 @@ class MultiUserRAGSystem {
         userId,
         question,
         engineId,
-        (userId, ragId) => this.canUserAccessRAG(userId, ragId),
-        (ragId) => this.getRAGEngineFromDB(ragId)
+        (ragId, userId) => this.canUserAccessRAG(ragId, userId),
+        (ragId) => this.getRAGEngineFromDB(ragId, userId)
       );
 
       return result;
@@ -215,7 +231,7 @@ class MultiUserRAGSystem {
         userId,
         fileId,
         ragId,
-        (userId, ragId) => this.canUserAccessRAG(userId, ragId)
+        (ragId, userId) => this.canUserAccessRAG(ragId, userId)
       );
 
       return result;
@@ -236,7 +252,7 @@ class MultiUserRAGSystem {
       );
 
       // 檢查用戶是否有權限訪問此 engine
-      const canAccess = await this.canUserAccessRAG(userId, engineId);
+      const canAccess = await this.canUserAccessRAG(engineId, userId);
       if (!canAccess) {
         return {
           success: false,
