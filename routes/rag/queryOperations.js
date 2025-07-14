@@ -41,7 +41,6 @@ class QueryOperations {
     userId,
     question,
     ragId = null,
-    canUserAccessRAG,
     getRAGEngineFromDB
   ) {
     try {
@@ -51,15 +50,6 @@ class QueryOperations {
         return {
           success: false,
           error: "RAG ID is required",
-        };
-      }
-
-      // 檢查用戶權限
-      const hasAccess = await canUserAccessRAG(userId, targetRagId);
-      if (!hasAccess) {
-        return {
-          success: false,
-          error: "您沒有權限訪問此 RAG Engine",
         };
       }
 
@@ -122,10 +112,6 @@ class QueryOperations {
   // 💬 查詢特定 RAG Engine - 添加重試機制
   async querySpecificRAG(corpusName, question, userId, fileName) {
     try {
-      console.log(`💬 === RAG QUERY WITH RETRY MECHANISM ===`);
-      console.log(`🏛️ Corpus Name: ${corpusName}`);
-      console.log(`❓ Question: ${question.substring(0, 100)}...`);
-
       const authClient = await this.auth.getClient();
       const accessToken = await authClient.getAccessToken();
 
