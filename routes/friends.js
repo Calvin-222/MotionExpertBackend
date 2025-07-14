@@ -87,5 +87,95 @@ router.post('/add-friend', authenticateToken, async (req, res) => {
     res.status(500).json({ success: false, message: 'Server error' });
   }
 });
+// Get friend notifications (people who added current user as friend but user hasn't added them back)
+router.get('/notifications', authenticateToken, async (req, res) => {
+  try {
+    const currentUserId = req.user.userId;
 
+    // Find users who added current user as friend but current user hasn't added them back
+    const query = `
+      SELECT f.userid, u.username, f.id
+      FROM friendship f
+      JOIN users u ON f.userid = u.userid
+      WHERE f.friendid = ? 
+      AND f.Known = 'false'
+      AND NOT EXISTS (
+        SELECT 1 FROM friendship f2 
+        WHERE f2.userid = ? AND f2.friendid = f.userid
+      )
+      ORDER BY f.created_at DESC
+    `;
+
+    const [notifications] = await pool.execute(query, [currentUserId, currentUserId]);
+
+    res.json({
+      success: true,
+      notifications: notifications,
+      count: notifications.length
+    });
+
+  } catch (error) {
+    console.error('Notifications error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Server error'
+    });
+  }
+});
+
+// Add friend back (when user accepts a friend request)
+router.post('/add-friend-back', authenticateToken, async (req, res) => {
+  try {
+    const { friendUserId } = req.body;
+    const currentUserId = req.user.userId;
+
+    // Check if the friend request exists
+    const checkQuery = `
+      SELECT id FROM friendship 
+      WHERE userid = ? AND friendid = ? AND Known = 'false'
+    `;
+    const [existingRequest] = await pool.execute(checkQuery, [friendUserId, currentUserId]);
+
+    if (existingRequest.length === 0) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Friend request not found' 
+      });
+    }
+
+    // Check if user already added this person back
+    const alreadyFriendsQuery = `
+      SELECT id FROM friendship 
+      WHERE userid = ? AND friendid = ?
+    `;
+    const [alreadyFriends] = await pool.execute(alreadyFriendsQuery, [currentUserId, friendUserId]);
+
+    if (alreadyFriends.length > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'You have already added this user as a friend' 
+      });
+    }
+
+    // Add friendship back (current user adds the friend)
+    const insertQuery = 'INSERT INTO friendship (userid, friendid, Known) VALUES (?, ?, ?)';
+    await pool.execute(insertQuery, [currentUserId, friendUserId, 'true']);
+
+    // Update the original friendship record to mark as known
+    const updateQuery = 'UPDATE friendship SET Known = ? WHERE userid = ? AND friendid = ?';
+    await pool.execute(updateQuery, ['true', friendUserId, currentUserId]);
+
+    res.json({ 
+      success: true, 
+      message: 'Friend added back successfully' 
+    });
+
+  } catch (error) {
+    console.error('Add friend back error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: 'Server error' 
+    });
+  }
+});
 module.exports = router;
