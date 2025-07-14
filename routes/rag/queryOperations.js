@@ -330,7 +330,7 @@ ${contextTexts}
           temperature: 0.1,
           topK: 32,
           topP: 1,
-          maxOutputTokens: 1024,
+          maxOutputTokens: 65536,
         }
       };
 

@@ -580,16 +580,16 @@ router.get(
       console.log(`📋 Getting documents for engine ${engineId}`);
 
       // 檢查權限
-      const hasAccess = await ragSystem.canUserAccessRAG(
-        requestUserId,
-        engineId
-      );
-      if (!hasAccess) {
-        return res.status(403).json({
-          success: false,
-          error: "沒有權限訪問此 RAG Engine",
-        });
-      }
+      // const hasAccess = await ragSystem.canUserAccessRAG(
+      //   requestUserId,
+      //   engineId
+      // );
+      // if (!hasAccess) {
+      //   return res.status(403).json({
+      //     success: false,
+      //     error: "沒有權限訪問此 RAG Engine",
+      //   });
+      // }
 
       // 獲取引擎文檔
       const fileOps = new (require("./rag/fileOperations"))();

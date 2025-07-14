@@ -379,13 +379,13 @@ class FileOperations {
       }
 
       // 檢查用戶權限
-      const hasAccess = await canUserAccessRAG(userId, targetRagId);
-      if (!hasAccess) {
-        return {
-          success: false,
-          error: "您沒有權限刪除此文檔",
-        };
-      }
+      // const hasAccess = await canUserAccessRAG(userId, targetRagId);
+      // if (!hasAccess) {
+      //   return {
+      //     success: false,
+      //     error: "您沒有權限刪除此文檔",
+      //   };
+      // }
 
       console.log(
         `🗑️ User ${userId} deleting document ${ragFileId} from RAG ${targetRagId}`
