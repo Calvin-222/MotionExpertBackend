@@ -37,6 +37,10 @@ const safetySettings = [
 ];
 
 
+router.get('/', function(req, res, next) {
+  res.render('index', { title: 'RAG 系統測試界面' });
+});
+
 /* GET API status check */
 router.get("/api/status", function (req, res, next) {
   res.json({
