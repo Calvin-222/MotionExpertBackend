@@ -32,7 +32,50 @@ class MultiUserRAGSystem {
       return [];
     }
   }
+async updateEngineVisibility(userId, engineId, visibility) {
+  try {
+    console.log(`🔧 Updating visibility for engine ${engineId} to ${visibility}`);
 
+    // Validate visibility value
+    const allowedVisibilities = ['private', 'public', 'unlisted'];
+    if (!allowedVisibilities.includes(visibility)) {
+      return {
+        success: false,
+        error: 'Invalid visibility value'
+      };
+    }
+
+    // Check if user owns the engine
+    const checkQuery = "SELECT * FROM rag WHERE ragid = ? AND userid = ?";
+    const [engineResults] = await this.pool.execute(checkQuery, [engineId, userId]);
+
+    if (engineResults.length === 0) {
+      return {
+        success: false,
+        error: 'Engine not found or no permission'
+      };
+    }
+
+    // Update visibility
+    const updateQuery = `UPDATE rag SET visibility = '${visibility}', updated_at = NOW() WHERE ragid = ? AND userid = ?`;
+    await this.pool.execute(updateQuery, [engineId, userId]);
+
+    return {
+      success: true,
+      message: 'Visibility updated successfully',
+      engine: {
+        id: engineId,
+        visibility: visibility
+      }
+    };
+  } catch (error) {
+    console.error("Error updating engine visibility:", error);
+    return {
+      success: false,
+      error: error.message
+    };
+  }
+}
   // 🔧 修正：創建用戶 RAG engine - 使用真正的 Google Cloud corpus 創建
   async createUserRAGEngine(userId, engineName, description = "") {
     try {

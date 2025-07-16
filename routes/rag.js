@@ -78,6 +78,33 @@ router.post("/users/engines", authenticateToken, async (req, res) => {
   }
 });
 
+// 🔧 更新 RAG Engine 可見性
+router.patch(
+  "/users/engines/:engineId/visibility",
+  authenticateToken,
+  async (req, res) => {
+    try {
+      const { engineId } = req.params;
+      const { visibility } = req.body;
+      const userId = req.user.userId;
+
+      const result = await ragSystem.updateEngineVisibility(userId, engineId, visibility);
+
+      if (result.success) {
+        res.json(result);
+      } else {
+        res.status(400).json(result);
+      }
+    } catch (error) {
+      console.error('Error updating engine visibility:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: 'Internal server error' 
+      });
+    }
+  }
+);
+
 router.post(
   "/users/engines/:engineId/share",
   authenticateToken,
@@ -442,7 +469,7 @@ router.delete(
   }
 );
 
-// 🤝 添加好友
+// 🤝 添加好友 NOT USED 
 router.post("/users/friends/add", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -460,7 +487,7 @@ router.post("/users/friends/add", authenticateToken, async (req, res) => {
   }
 });
 
-// 🤝 接受好友邀請
+// 🤝 接受好友邀請 NOT USED 
 router.post("/users/friends/accept", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
@@ -485,7 +512,7 @@ router.post("/users/friends/accept", authenticateToken, async (req, res) => {
   }
 });
 
-// 👥 獲取好友列表
+// 👥 獲取好友列表 NOT USED
 router.get("/users/friends", authenticateToken, async (req, res) => {
   try {
     const userId = req.user.userId;
