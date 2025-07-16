@@ -85,7 +85,7 @@ router.post("/api/generate", async function (req, res, next) {
     }
 
     const generativeModel = vertexAI.getGenerativeModel({
-      model: "gemini-2.5-flash-preview-05-20",
+      model: "gemini-2.5-pro",
       generationConfig: generationConfig,
       safetySettings: safetySettings,
     });
@@ -157,7 +157,7 @@ ${synopsisString}
 劇本應該適合拍攝製作使用。`;
 
     const generativeModel = vertexAI.getGenerativeModel({
-      model: "gemini-2.5-flash-preview-05-20",
+      model: "gemini-2.5-pro",
       generationConfig: generationConfig,
       safetySettings: safetySettings,
     });
@@ -275,7 +275,7 @@ router.get("/api/test-vertex", async function (req, res, next) {
     console.log("正在測試 Vertex AI 連接...");
 
     const generativeModel = vertexAI.getGenerativeModel({
-      model: "gemini-2.5-flash-preview-05-20",
+      model: "gemini-2.5-pro",
       generationConfig: generationConfig,
       safetySettings: safetySettings,
     });
