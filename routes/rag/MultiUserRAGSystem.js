@@ -37,7 +37,7 @@ async updateEngineVisibility(userId, engineId, visibility) {
     console.log(`🔧 Updating visibility for engine ${engineId} to ${visibility}`);
 
     // Validate visibility value
-    const allowedVisibilities = ['private', 'public', 'unlisted'];
+    const allowedVisibilities = ['Private', 'Public', 'Friend'];
     if (!allowedVisibilities.includes(visibility)) {
       return {
         success: false,
