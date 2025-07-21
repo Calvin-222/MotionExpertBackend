@@ -87,7 +87,7 @@ router.patch(
       const { engineId } = req.params;
       const { visibility } = req.body;
       const userId = req.user.userId;
-
+     
       const result = await ragSystem.updateEngineVisibility(userId, engineId, visibility);
 
       if (result.success) {
@@ -200,16 +200,20 @@ router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
     const ownEngines = await ragSystem.getUserRAGEngines(targetUserId);
 
     // 查詢被分享給我的 engines
-    const [sharedRows] = await ragSystem.pool.execute(
-      `SELECT r.* FROM private_rag pr JOIN rag r ON pr.ragid = r.ragid WHERE pr.userid = ?`,
+     const [sharedRows] = await ragSystem.pool.execute(
+      `SELECT r.*, u.username as owner_name, u.userid as owner_id 
+       FROM private_rag pr 
+       JOIN rag r ON pr.ragid = r.ragid 
+       JOIN users u ON r.userid = u.userid 
+       WHERE pr.userid = ?`,
       [targetUserId]
     );
     const sharedEngines = sharedRows || [];
 
     // 合併
     const allEngines = [
-      ...ownEngines.map((e) => ({ ...e, isOwner: true })),
-      ...sharedEngines.map((e) => ({ ...e, isOwner: false })),
+      ...ownEngines.map((e) => ({ ...e, isOwner: true, comingFrom: "yourself" })),
+      ...sharedEngines.map((e) => ({ ...e, isOwner: false, comingFrom: e.owner_name })),
     ];
 
     // 格式化
@@ -222,6 +226,7 @@ router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
       createdAt: engine.created_at,
       updatedAt: engine.updated_at,
       isOwner: engine.isOwner,
+      comingFrom: engine.comingFrom,
     }));
 
     res.json({
@@ -469,70 +474,7 @@ router.delete(
   }
 );
 
-// 🤝 添加好友 NOT USED 
-router.post("/users/friends/add", authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { friendUsername } = req.body;
 
-    res.json({
-      success: true,
-      message: "好友請求已發送",
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: "Failed to add friend",
-    });
-  }
-});
-
-// 🤝 接受好友邀請 NOT USED 
-router.post("/users/friends/accept", authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-    const { friendId } = req.body;
-
-    console.log(`✅ User ${userId} accepting friend request from: ${friendId}`);
-
-    res.json({
-      success: true,
-      message: "好友請求已接受",
-      friendship: {
-        friendId: friendId,
-        acceptedAt: new Date().toISOString(),
-      },
-    });
-  } catch (error) {
-    console.error("Accept friend error:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to accept friend request",
-    });
-  }
-});
-
-// 👥 獲取好友列表 NOT USED
-router.get("/users/friends", authenticateToken, async (req, res) => {
-  try {
-    const userId = req.user.userId;
-
-    console.log(`👥 Getting friends for user: ${userId}`);
-
-    res.json({
-      success: true,
-      friends: [],
-      pendingRequests: [],
-      total: 0,
-    });
-  } catch (error) {
-    console.error("Get friends error:", error);
-    res.status(500).json({
-      success: false,
-      error: "Failed to get friends list",
-    });
-  }
-});
 
 // 🔗 獲取可訪問的 RAG Engines
 router.get("/users/accessible-engines", authenticateToken, async (req, res) => {
