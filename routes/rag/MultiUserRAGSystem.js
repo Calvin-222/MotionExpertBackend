@@ -13,25 +13,44 @@ class MultiUserRAGSystem {
   }
 
   // 🔧 添加缺失的方法：獲取用戶的 RAG engines
-  async getUserRAGEngines(userId) {
-    try {
-      console.log(`📊 Getting RAG engines for user: ${userId}`);
-
-      const query = `
-        SELECT ragid, ragname, visibility, created_at, updated_at 
-        FROM rag 
-        WHERE userid = ? 
-        ORDER BY created_at DESC
-      `;
-
-      const [results] = await this.pool.execute(query, [userId]);
-
-      return results || [];
-    } catch (error) {
-      console.error("Error getting user RAG engines:", error);
-      return [];
-    }
+  async getAllUserEngines(userId) {
+  try {
+    const allEngines = [];
+    
+    // Get own engines
+    const queryOwn = `SELECT r.* FROM rag r WHERE r.userid = ?`;
+    const [ownResults] = await this.pool.execute(queryOwn, [userId]);
+    allEngines.push(...ownResults.map(e => ({...e, isOwner: true, comingFrom: "yourself"})));
+    
+    // Get shared engines
+    const queryShared = `
+      SELECT r.*, u.username as owner_name
+      FROM private_rag pr
+      JOIN rag r ON pr.ragid = r.ragid
+      JOIN users u ON r.userid = u.userid
+      WHERE pr.userid = ?
+    `;
+    const [sharedResults] = await this.pool.execute(queryShared, [userId]);
+    allEngines.push(...sharedResults.map(e => ({...e, isOwner: false, comingFrom: e.owner_name})));
+    
+    // Get friend engines
+    const queryFriends = `
+     SELECT r.*, u.username as owner_name
+    FROM rag r
+    JOIN users u ON r.userid = u.userid
+    WHERE r.visibility = 'Friend' 
+      AND r.userid != ?
+      AND r.userid IN (SELECT userid FROM friendship WHERE friendid = ?)
+    `;
+    
+    const [friendResults] = await this.pool.execute(queryFriends, [userId, userId]);
+    allEngines.push(...friendResults.map(e => ({...e, isOwner: false, comingFrom: `${e.owner_name} (朋友)`})));
+    
+    return { success: true, engines: allEngines };
+  } catch (error) {
+    return { success: false, error: error.message };
   }
+}
 async updateEngineVisibility(userId, engineId, visibility) {
   try {
     console.log(`🔧 Updating visibility for engine ${engineId} to ${visibility}`);
@@ -190,7 +209,21 @@ async updateEngineVisibility(userId, engineId, visibility) {
       if (sharedResults.length > 0) {
         return { success: true, ragEngine: sharedResults[0] };
       }
-
+      //friendship funciton
+      const queryFriends = `
+        SELECT r.*, u.username 
+        FROM rag r
+        JOIN users u ON r.userid = u.userid
+        JOIN friendship f ON f.friendid = ?
+        WHERE r.ragid = ? 
+        AND r.visibility = 'Friend' 
+        AND r.userid != ?
+      `;
+      const [friendResults] = await this.pool.execute(queryFriends, [userId, ragId, userId]);
+      if (friendResults.length > 0) {
+        return { success: true, ragEngine: friendResults[0], accessType: 'friend' };
+      }
+      
       return { success: false, error: "找不到指定的 RAG Engine" };
     } catch (error) {
       return { success: false, error: error.message };

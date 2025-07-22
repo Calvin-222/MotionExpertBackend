@@ -196,28 +196,17 @@ router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
       });
     }
 
-    // 查詢自己擁有的 engines
-    const ownEngines = await ragSystem.getUserRAGEngines(targetUserId);
-
-    // 查詢被分享給我的 engines
-     const [sharedRows] = await ragSystem.pool.execute(
-      `SELECT r.*, u.username as owner_name, u.userid as owner_id 
-       FROM private_rag pr 
-       JOIN rag r ON pr.ragid = r.ragid 
-       JOIN users u ON r.userid = u.userid 
-       WHERE pr.userid = ?`,
-      [targetUserId]
-    );
-    const sharedEngines = sharedRows || [];
-
-    // 合併
-    const allEngines = [
-      ...ownEngines.map((e) => ({ ...e, isOwner: true, comingFrom: "yourself" })),
-      ...sharedEngines.map((e) => ({ ...e, isOwner: false, comingFrom: e.owner_name })),
-    ];
+    const result = await ragSystem.getAllUserEngines(targetUserId);
+    
+    if (!result.success) {
+      return res.status(500).json({
+        success: false,
+        error: result.error,
+      });
+    }
 
     // 格式化
-    const formattedEngines = allEngines.map((engine) => ({
+    const formattedEngines = result.engines.map((engine) => ({
       id: engine.ragid,
       name: engine.ragname,
       displayName: engine.ragname,
