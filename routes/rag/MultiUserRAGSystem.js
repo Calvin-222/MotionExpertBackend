@@ -230,7 +230,6 @@ async updateEngineVisibility(userId, engineId, visibility) {
     }
   }
 
-  // 🔧 修正：上傳文檔到用戶 RAG - 傳遞完整參數
   async uploadToUserRAG(userId, file, fileName, engineId) {
     try {
       console.log(
