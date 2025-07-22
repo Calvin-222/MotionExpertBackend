@@ -7,7 +7,6 @@ class EngineManagement {
     this.projectId = PROJECT_ID;
     this.location = LOCATION;
     this.db = dbPool;
-    // 添加速率限制
     this.lastApiCall = 0;
     this.minApiInterval = 2000; // 2秒間隔
   }
@@ -212,20 +211,10 @@ class EngineManagement {
         throw dbError;
       }
 
-      // Step 7: 最終成功
-      console.log(`🎉 === RAG ENGINE CREATION COMPLETED SUCCESSFULLY ===`);
-      console.log(`🎉 Ready for use: ${corpusName}`);
-      
-      // 除錯：檢查返回值
-      console.log(`🔍 === FINAL RETURN VALUES DEBUG ===`);
-      console.log(`🔍 finalCorpusId: ${finalCorpusId}`);
-      console.log(`🔍 corpusName: ${corpusName}`);
-      console.log(`🔍 corpusName type: ${typeof corpusName}`);
-
       return {
         success: true,
         userId: userId,
-        engineId: finalCorpusId,  // ✅ 修正：添加 engineId
+        engineId: finalCorpusId,
         corpusId: finalCorpusId,
         corpusName: corpusName,
         displayName: finalDisplayName,
@@ -266,7 +255,6 @@ class EngineManagement {
     }
   }
 
-  // 🔧 改進的等待操作方法
   async waitForOperation(operationName, maxWaitTime = 300000) {
     try {
       const authClient = await this.auth.getClient();
