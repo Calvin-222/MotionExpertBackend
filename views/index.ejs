@@ -3,59 +3,126 @@
   <head>
     <title><%= title %></title>
     <style>
-      body { font-family: Arial, sans-serif; padding: 20px; }
-      .section { margin-bottom: 30px; padding: 10px; border: 1px solid #ccc; border-radius: 5px; }
-      .hidden { display: none; }
-      table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-      th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-      button { margin: 5px; padding: 5px 10px; }
-      input, textarea, select { margin: 5px 0; padding: 5px; width: 300px; }
-      .response { background: #f5f5f5; padding: 10px; border-radius: 5px; margin-top: 10px; white-space: pre-wrap; }
-      .error { background: #ffe6e6; border: 1px solid #ff9999; color: #cc0000; }
-      .success { background: #e6ffe6; border: 1px solid #99ff99; color: #006600; }
+      body {
+        font-family: Arial, sans-serif;
+        padding: 20px;
+      }
+      .section {
+        margin-bottom: 30px;
+        padding: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+      .hidden {
+        display: none;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 10px;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 8px;
+        text-align: left;
+      }
+      button {
+        margin: 5px;
+        padding: 5px 10px;
+      }
+      input,
+      textarea,
+      select {
+        margin: 5px 0;
+        padding: 5px;
+        width: 300px;
+      }
+      .response {
+        background: #f5f5f5;
+        padding: 10px;
+        border-radius: 5px;
+        margin-top: 10px;
+        white-space: pre-wrap;
+      }
+      .error {
+        background: #ffe6e6;
+        border: 1px solid #ff9999;
+        color: #cc0000;
+      }
+      .success {
+        background: #e6ffe6;
+        border: 1px solid #99ff99;
+        color: #006600;
+      }
     </style>
   </head>
   <body>
     <h1>RAG 系統測試界面</h1>
-    
+
     <!-- 連接狀態檢查 -->
     <div class="section">
       <h2>系統狀態檢查</h2>
       <button id="checkStatusBtn">檢查後端連接</button>
       <div class="response" id="statusResponse"></div>
     </div>
-    
+
     <!-- 登錄部分 -->
     <div class="section" id="loginSection">
       <h2>1. 用戶登錄</h2>
       <form id="loginForm">
         <div>
           <label for="username">用戶名:</label>
-          <input type="text" id="username" required placeholder="請輸入用戶名">
+          <input
+            type="text"
+            id="username"
+            required
+            placeholder="請輸入用戶名"
+          />
         </div>
         <div>
           <label for="password">密碼:</label>
-          <input type="password" id="password" required placeholder="請輸入密碼">
+          <input
+            type="password"
+            id="password"
+            required
+            placeholder="請輸入密碼"
+          />
         </div>
         <button type="submit">登錄</button>
       </form>
       <div class="response" id="loginResponse"></div>
-      
+
       <!-- 添加註冊選項 -->
-      <div style="margin-top: 15px;">
+      <div style="margin-top: 15px">
         <h3>還沒有賬號？</h3>
         <form id="registerForm">
           <div>
             <label for="regUsername">用戶名:</label>
-            <input type="text" id="regUsername" required placeholder="請輸入用戶名">
+            <input
+              type="text"
+              id="regUsername"
+              required
+              placeholder="請輸入用戶名"
+            />
           </div>
           <div>
             <label for="regPassword">密碼:</label>
-            <input type="password" id="regPassword" required placeholder="請輸入密碼">
+            <input
+              type="password"
+              id="regPassword"
+              required
+              placeholder="請輸入密碼"
+            />
           </div>
           <div>
             <label for="confirmPassword">確認密碼:</label>
-            <input type="password" id="confirmPassword" required placeholder="再次輸入密碼">
+            <input
+              type="password"
+              id="confirmPassword"
+              required
+              placeholder="再次輸入密碼"
+            />
           </div>
           <button type="submit">註冊</button>
         </form>
@@ -68,31 +135,61 @@
       <!-- 用戶信息 -->
       <div class="section">
         <h2>用戶信息</h2>
+        <!-- 頭像顯示區 -->
+        <div>
+          <img
+            id="userAvatar"
+            src="/default-avatar.png"
+            alt="頭像"
+            style="
+              width: 80px;
+              height: 80px;
+              border-radius: 30%;
+              border: 1px solid #ccc;
+            "
+          />
+        </div>
         <div id="userInfo">尚未登錄</div>
         <button id="logoutBtn">登出</button>
+        <!-- 上傳頭像表單 -->
+        <form
+          id="avatarUploadForm"
+          enctype="multipart/form-data"
+          style="margin-top: 10px"
+        >
+          <input
+            type="file"
+            id="avatarFile"
+            name="avatar"
+            accept="image/*"
+            required
+          />
+          <button type="submit">上傳頭像</button>
+        </form>
+        <div class="response" id="avatarUploadResponse"></div>
       </div>
 
       <!-- RAG Engine 管理 -->
       <div class="section">
         <h2>2. RAG Engine 管理</h2>
-        
+
         <!-- 創建 RAG Engine -->
         <div>
           <h3>創建新 RAG Engine</h3>
           <form id="createEngineForm">
             <div>
               <label for="engineName">引擎名稱:</label>
-              <input type="text" id="engineName" required>
+              <input type="text" id="engineName" required />
             </div>
             <div>
               <label for="engineDescription">描述 (選填):</label>
-              <input type="text" id="engineDescription">
+              <input type="text" id="engineDescription" />
             </div>
             <button type="submit">創建 RAG Engine</button>
           </form>
           <div class="response" id="createEngineResponse"></div>
         </div>
-        
+
         <!-- 列出用戶的 RAG Engines -->
         <div>
           <h3>我的 RAG Engines</h3>
@@ -107,18 +204,18 @@
                 <th>建立日期</th>
                 <th>操作</th>
                 <th>操作</th>
-                <th>分享</th> 
+                <th>分享</th>
               </tr>
             </thead>
             <tbody id="enginesTableBody"></tbody>
           </table>
         </div>
       </div>
-      
+
       <!-- 文件管理 -->
       <div class="section">
         <h2>3. 文件管理</h2>
-        
+
         <!-- 上傳文件 -->
         <div>
           <h3>上傳文件到 RAG Engine</h3>
@@ -129,13 +226,13 @@
             </div>
             <div>
               <label for="fileToUpload">選擇文件 (支援多個文件):</label>
-              <input type="file" id="fileToUpload" name="file" multiple>
+              <input type="file" id="fileToUpload" name="file" multiple />
             </div>
             <button type="submit">上傳文件</button>
           </form>
           <div class="response" id="uploadFileResponse"></div>
         </div>
-        
+
         <!-- 列出引擎的文件 -->
         <div>
           <h3>查看 RAG Engine 中的文件</h3>
@@ -157,7 +254,7 @@
           </table>
         </div>
       </div>
-      
+
       <!-- 查詢功能 -->
       <div class="section">
         <h2>4. RAG 查詢</h2>
@@ -175,586 +272,814 @@
         <div class="response" id="queryResponse"></div>
       </div>
     </div>
-    
+
     <script>
       // 全局變量
-      let authToken = localStorage.getItem('authToken');
-      let currentUserId = localStorage.getItem('userId');
+      let authToken = localStorage.getItem("authToken");
+      let currentUserId = localStorage.getItem("userId");
       let userEngines = [];
-      
+
       // 初始化
-      document.addEventListener('DOMContentLoaded', function() {
+      document.addEventListener("DOMContentLoaded", function () {
         checkAuthStatus();
-        
+
         // 事件監聽器設置
-        document.getElementById('checkStatusBtn').addEventListener('click', checkBackendStatus);
-        document.getElementById('loginForm').addEventListener('submit', function(e) {
-          e.preventDefault();
-          login();
-        });
-        document.getElementById('registerForm').addEventListener('submit', function(e) {
-          e.preventDefault();
-          register();
-        });
-        document.getElementById('logoutBtn').addEventListener('click', logout);
-        document.getElementById('createEngineForm').addEventListener('submit', function(e) {
-          e.preventDefault();
-          createEngine();
-        });
-        document.getElementById('listEnginesBtn').addEventListener('click', listEngines);
-        document.getElementById('uploadFileForm').addEventListener('submit', function(e) {
-          e.preventDefault();
-          uploadFile();
-        });
-        document.getElementById('listDocumentsBtn').addEventListener('click', listDocuments);
-        document.getElementById('queryForm').addEventListener('submit', function(e) {
-          e.preventDefault();
-          queryEngine();
-        });
-        
+        document
+          .getElementById("checkStatusBtn")
+          .addEventListener("click", checkBackendStatus);
+        document
+          .getElementById("loginForm")
+          .addEventListener("submit", function (e) {
+            e.preventDefault();
+            login();
+          });
+        document
+          .getElementById("registerForm")
+          .addEventListener("submit", function (e) {
+            e.preventDefault();
+            register();
+          });
+        document.getElementById("logoutBtn").addEventListener("click", logout);
+        document
+          .getElementById("createEngineForm")
+          .addEventListener("submit", function (e) {
+            e.preventDefault();
+            createEngine();
+          });
+        document
+          .getElementById("listEnginesBtn")
+          .addEventListener("click", listEngines);
+        document
+          .getElementById("uploadFileForm")
+          .addEventListener("submit", function (e) {
+            e.preventDefault();
+            uploadFile();
+          });
+        document
+          .getElementById("listDocumentsBtn")
+          .addEventListener("click", listDocuments);
+        document
+          .getElementById("queryForm")
+          .addEventListener("submit", function (e) {
+            e.preventDefault();
+            queryEngine();
+          });
+        document
+          .getElementById("avatarUploadForm")
+          .addEventListener("submit", function (e) {
+            e.preventDefault();
+            uploadAvatar();
+          });
+
+        async function uploadAvatar() {
+          if (!currentUserId) {
+            document.getElementById("avatarUploadResponse").textContent =
+              "請先登入";
+            document.getElementById("avatarUploadResponse").className =
+              "response error";
+            return;
+          }
+          const fileInput = document.getElementById("avatarFile");
+          if (fileInput.files.length === 0) {
+            document.getElementById("avatarUploadResponse").textContent =
+              "請選擇圖片";
+            document.getElementById("avatarUploadResponse").className =
+              "response error";
+            return;
+          }
+          const formData = new FormData();
+          formData.append("avatar", fileInput.files[0]);
+          formData.append("userId", currentUserId);
+
+          try {
+            const response = await fetch("/api/users/avatar", {
+              method: "POST",
+              body: formData,
+            });
+            const data = await response.json();
+            if (data.success) {
+              document.getElementById("avatarUploadResponse").textContent =
+                "頭像上傳成功";
+              document.getElementById("avatarUploadResponse").className =
+                "response success";
+            } else {
+              document.getElementById("avatarUploadResponse").textContent =
+                "上傳失敗: " + data.error;
+              document.getElementById("avatarUploadResponse").className =
+                "response error";
+            }
+          } catch (error) {
+            document.getElementById("avatarUploadResponse").textContent =
+              "錯誤: " + error.message;
+            document.getElementById("avatarUploadResponse").className =
+              "response error";
+          }
+        }
+
+        // 登錄後自動載入頭像
+        async function loadUserAvatar() {
+          if (!currentUserId) return;
+          try {
+            const response = await fetch(
+              "/api/users/" + currentUserId + "/avatar"
+            );
+            const data = await response.json();
+            if (data.success && data.avatarurl) {
+              document.getElementById("userAvatar").src = data.avatarurl;
+            } else {
+              document.getElementById("userAvatar").src = "/default-avatar.png";
+            }
+          } catch {
+            document.getElementById("userAvatar").src = "/default-avatar.png";
+          }
+        }
+
+        // 在 checkAuthStatus() 裡加載頭像
+        function checkAuthStatus() {
+          if (authToken && currentUserId) {
+            document.getElementById("loginSection").classList.add("hidden");
+            document
+              .getElementById("authenticatedSection")
+              .classList.remove("hidden");
+            document.getElementById("userInfo").textContent =
+              "當前用戶 ID: " + currentUserId;
+            loadUserAvatar();
+            listEngines();
+          } else {
+            document.getElementById("loginSection").classList.remove("hidden");
+            document
+              .getElementById("authenticatedSection")
+              .classList.add("hidden");
+            document.getElementById("userAvatar").src = "/default-avatar.png";
+          }
+        }
+
         // 初始狀態檢查
         checkBackendStatus();
       });
-      
+
       // 檢查後端狀態
       async function checkBackendStatus() {
         try {
-          document.getElementById('statusResponse').textContent = '檢查中...';
-          
-          const response = await fetch('/', {
-            method: 'GET',
+          document.getElementById("statusResponse").textContent = "檢查中...";
+
+          const response = await fetch("/", {
+            method: "GET",
           });
-          
+
           if (response.ok) {
-            document.getElementById('statusResponse').textContent = '✅ 後端連接正常 (狀態碼: ' + response.status + ')';
-            document.getElementById('statusResponse').className = 'response success';
+            document.getElementById("statusResponse").textContent =
+              "✅ 後端連接正常 (狀態碼: " + response.status + ")";
+            document.getElementById("statusResponse").className =
+              "response success";
           } else {
-            document.getElementById('statusResponse').textContent = '❌ 後端狀態異常 (狀態碼: ' + response.status + ')';
-            document.getElementById('statusResponse').className = 'response error';
+            document.getElementById("statusResponse").textContent =
+              "❌ 後端狀態異常 (狀態碼: " + response.status + ")";
+            document.getElementById("statusResponse").className =
+              "response error";
           }
         } catch (error) {
-          document.getElementById('statusResponse').textContent = '❌ 無法連接後端: ' + error.message;
-          document.getElementById('statusResponse').className = 'response error';
+          document.getElementById("statusResponse").textContent =
+            "❌ 無法連接後端: " + error.message;
+          document.getElementById("statusResponse").className =
+            "response error";
         }
       }
-      
+
       // 檢查認證狀態
       function checkAuthStatus() {
         if (authToken && currentUserId) {
-          document.getElementById('loginSection').classList.add('hidden');
-          document.getElementById('authenticatedSection').classList.remove('hidden');
-          document.getElementById('userInfo').textContent = '當前用戶 ID: ' + currentUserId;
+          document.getElementById("loginSection").classList.add("hidden");
+          document
+            .getElementById("authenticatedSection")
+            .classList.remove("hidden");
+          document.getElementById("userInfo").textContent =
+            "當前用戶 ID: " + currentUserId;
+          loadUserAvatar();
           listEngines();
         } else {
-          document.getElementById('loginSection').classList.remove('hidden');
-          document.getElementById('authenticatedSection').classList.add('hidden');
+          document.getElementById("loginSection").classList.remove("hidden");
+          document
+            .getElementById("authenticatedSection")
+            .classList.add("hidden");
+          document.getElementById("userAvatar").src = "/default-avatar.png";
         }
       }
-      
+
       // 註冊功能
       async function register() {
-        const username = document.getElementById('regUsername').value;
-        const password = document.getElementById('regPassword').value;
-        const confirmPassword = document.getElementById('confirmPassword').value;
-        
+        const username = document.getElementById("regUsername").value;
+        const password = document.getElementById("regPassword").value;
+        const confirmPassword =
+          document.getElementById("confirmPassword").value;
+
         if (password !== confirmPassword) {
-          document.getElementById('registerResponse').textContent = '密碼確認不匹配';
-          document.getElementById('registerResponse').className = 'response error';
+          document.getElementById("registerResponse").textContent =
+            "密碼確認不匹配";
+          document.getElementById("registerResponse").className =
+            "response error";
           return;
         }
-        
+
         try {
-          const response = await fetch('/api/auth/register', {
-            method: 'POST',
+          const response = await fetch("/api/auth/register", {
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json',
+              "Content-Type": "application/json",
             },
-            body: JSON.stringify({ username: username, password: password, confirmPassword: confirmPassword }),
+            body: JSON.stringify({
+              username: username,
+              password: password,
+              confirmPassword: confirmPassword,
+            }),
           });
-          
+
           const data = await response.json();
-          document.getElementById('registerResponse').textContent = JSON.stringify(data, null, 2);
-          
+          document.getElementById("registerResponse").textContent =
+            JSON.stringify(data, null, 2);
+
           if (data.success && data.token) {
             authToken = data.token;
             currentUserId = data.user.userid;
-            localStorage.setItem('authToken', authToken);
-            localStorage.setItem('userId', currentUserId);
-            document.getElementById('registerResponse').className = 'response success';
-            setTimeout(function() {
+            localStorage.setItem("authToken", authToken);
+            localStorage.setItem("userId", currentUserId);
+            document.getElementById("registerResponse").className =
+              "response success";
+            setTimeout(function () {
               checkAuthStatus();
             }, 1000);
           } else {
-            document.getElementById('registerResponse').className = 'response error';
+            document.getElementById("registerResponse").className =
+              "response error";
           }
         } catch (error) {
-          document.getElementById('registerResponse').textContent = 'Error: ' + error.message;
-          document.getElementById('registerResponse').className = 'response error';
+          document.getElementById("registerResponse").textContent =
+            "Error: " + error.message;
+          document.getElementById("registerResponse").className =
+            "response error";
         }
       }
-      
+
       // 登錄功能
       async function login() {
-        const username = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
-        
+        const username = document.getElementById("username").value;
+        const password = document.getElementById("password").value;
+
         try {
-          document.getElementById('loginResponse').textContent = '登錄中...';
-          
-          const response = await fetch('/api/auth/login', {
-            method: 'POST',
+          document.getElementById("loginResponse").textContent = "登錄中...";
+
+          const response = await fetch("/api/auth/login", {
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json',
+              "Content-Type": "application/json",
             },
             body: JSON.stringify({ username: username, password: password }),
           });
-          
+
           const data = await response.json();
-          document.getElementById('loginResponse').textContent = JSON.stringify(data, null, 2);
-          
+          document.getElementById("loginResponse").textContent = JSON.stringify(
+            data,
+            null,
+            2
+          );
+
           if (data.success && data.token) {
             authToken = data.token;
             currentUserId = data.user.userid;
-            localStorage.setItem('authToken', authToken);
-            localStorage.setItem('userId', currentUserId);
-            document.getElementById('loginResponse').className = 'response success';
+            localStorage.setItem("authToken", authToken);
+            localStorage.setItem("userId", currentUserId);
+            document.getElementById("loginResponse").className =
+              "response success";
             checkAuthStatus();
           } else {
-            document.getElementById('loginResponse').className = 'response error';
+            document.getElementById("loginResponse").className =
+              "response error";
           }
         } catch (error) {
-          document.getElementById('loginResponse').textContent = 'Error: ' + error.message;
-          document.getElementById('loginResponse').className = 'response error';
+          document.getElementById("loginResponse").textContent =
+            "Error: " + error.message;
+          document.getElementById("loginResponse").className = "response error";
         }
       }
-      
+
       // 登出功能
       function logout() {
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('userId');
+        localStorage.removeItem("authToken");
+        localStorage.removeItem("userId");
         authToken = null;
         currentUserId = null;
         checkAuthStatus();
       }
-      
+
       // 創建 RAG Engine
       async function createEngine() {
-        const engineName = document.getElementById('engineName').value;
-        const description = document.getElementById('engineDescription').value;
-        
+        const engineName = document.getElementById("engineName").value;
+        const description = document.getElementById("engineDescription").value;
+
         try {
-          const response = await fetch('/api/rag/users/engines', {
-            method: 'POST',
+          const response = await fetch("/api/rag/users/engines", {
+            method: "POST",
             headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ' + authToken,
+              "Content-Type": "application/json",
+              Authorization: "Bearer " + authToken,
             },
-            body: JSON.stringify({ engineName: engineName, description: description }),
+            body: JSON.stringify({
+              engineName: engineName,
+              description: description,
+            }),
           });
-          
+
           const data = await response.json();
-          document.getElementById('createEngineResponse').textContent = JSON.stringify(data, null, 2);
-          
+          document.getElementById("createEngineResponse").textContent =
+            JSON.stringify(data, null, 2);
+
           if (data.success) {
-            document.getElementById('createEngineResponse').className = 'response success';
-            document.getElementById('engineName').value = '';
-            document.getElementById('engineDescription').value = '';
+            document.getElementById("createEngineResponse").className =
+              "response success";
+            document.getElementById("engineName").value = "";
+            document.getElementById("engineDescription").value = "";
             listEngines();
           } else {
-            document.getElementById('createEngineResponse').className = 'response error';
+            document.getElementById("createEngineResponse").className =
+              "response error";
           }
         } catch (error) {
-          document.getElementById('createEngineResponse').textContent = 'Error: ' + error.message;
-          document.getElementById('createEngineResponse').className = 'response error';
+          document.getElementById("createEngineResponse").textContent =
+            "Error: " + error.message;
+          document.getElementById("createEngineResponse").className =
+            "response error";
         }
       }
-      
+
       // 列出用戶的 RAG Engines
       async function listEngines() {
         try {
-          const response = await fetch('/api/rag/users/' + currentUserId + '/engines', {
-            method: 'GET',
-            headers: {
-              'Authorization': 'Bearer ' + authToken,
-            },
-          });
-          
+          const response = await fetch(
+            "/api/rag/users/" + currentUserId + "/engines",
+            {
+              method: "GET",
+              headers: {
+                Authorization: "Bearer " + authToken,
+              },
+            }
+          );
+
           const data = await response.json();
-          document.getElementById('listEnginesResponse').textContent = JSON.stringify(data, null, 2);
-          
+          document.getElementById("listEnginesResponse").textContent =
+            JSON.stringify(data, null, 2);
+
           if (data.success) {
             userEngines = data.engines;
             populateEnginesTable(data.engines);
             populateEngineSelects(data.engines);
-            document.getElementById('listEnginesResponse').className = 'response success';
+            document.getElementById("listEnginesResponse").className =
+              "response success";
           } else {
-            document.getElementById('listEnginesResponse').className = 'response error';
+            document.getElementById("listEnginesResponse").className =
+              "response error";
           }
         } catch (error) {
-          document.getElementById('listEnginesResponse').textContent = 'Error: ' + error.message;
-          document.getElementById('listEnginesResponse').className = 'response error';
+          document.getElementById("listEnginesResponse").textContent =
+            "Error: " + error.message;
+          document.getElementById("listEnginesResponse").className =
+            "response error";
         }
       }
-      
+
       // 填充引擎表格
-     function populateEnginesTable(engines) {
-  const tableBody = document.getElementById('enginesTableBody');
-  tableBody.innerHTML = '';
-  
-  engines.forEach(function(engine) {
-    const row = document.createElement('tr');
-    
-    const idCell = document.createElement('td');
-    idCell.textContent = engine.id;
-    row.appendChild(idCell);
-    
-    const nameCell = document.createElement('td');
-    nameCell.textContent = engine.name;
-    row.appendChild(nameCell);
-    
-    const visibilityCell = document.createElement('td');
-    visibilityCell.textContent = engine.visibility || 'private';
-    row.appendChild(visibilityCell);
-    
-    const createdAtCell = document.createElement('td');
-    createdAtCell.textContent = new Date(engine.createdAt).toLocaleString();
-    row.appendChild(createdAtCell);
-    
-    const actionsCell = document.createElement('td');
-    const deleteBtn = document.createElement('button');
-    deleteBtn.textContent = '刪除';
-    deleteBtn.onclick = function() { deleteEngine(engine.id); };
-    actionsCell.appendChild(deleteBtn);
-    row.appendChild(actionsCell);
+      function populateEnginesTable(engines) {
+        const tableBody = document.getElementById("enginesTableBody");
+        tableBody.innerHTML = "";
 
-    // 新增分享欄位
-    const shareCell = document.createElement('td');
-    const shareInput = document.createElement('input');
-    shareInput.type = 'text';
-    shareInput.placeholder = '對方 userId';
-    shareInput.style.width = '120px';
-    shareCell.appendChild(shareInput);
+        engines.forEach(function (engine) {
+          const row = document.createElement("tr");
 
-    const shareBtn = document.createElement('button');
-    shareBtn.textContent = '分享';
-    shareBtn.onclick = async function() {
-      const targetUserId = shareInput.value.trim();
-      if (!targetUserId) {
-        alert('請輸入對方 userId');
-        return;
-      }
-      shareBtn.disabled = true;
-      shareBtn.textContent = '分享中...';
-      try {
-        const response = await fetch('/api/rag/users/engines/' + engine.id + '/share', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer ' + authToken,
-          },
-          body: JSON.stringify({ targetUserId: targetUserId }),
+          const idCell = document.createElement("td");
+          idCell.textContent = engine.id;
+          row.appendChild(idCell);
+
+          const nameCell = document.createElement("td");
+          nameCell.textContent = engine.name;
+          row.appendChild(nameCell);
+
+          const visibilityCell = document.createElement("td");
+          visibilityCell.textContent = engine.visibility || "private";
+          row.appendChild(visibilityCell);
+
+          const createdAtCell = document.createElement("td");
+          createdAtCell.textContent = new Date(
+            engine.createdAt
+          ).toLocaleString();
+          row.appendChild(createdAtCell);
+
+          const actionsCell = document.createElement("td");
+          const deleteBtn = document.createElement("button");
+          deleteBtn.textContent = "刪除";
+          deleteBtn.onclick = function () {
+            deleteEngine(engine.id);
+          };
+          actionsCell.appendChild(deleteBtn);
+          row.appendChild(actionsCell);
+
+          // 新增分享欄位
+          const shareCell = document.createElement("td");
+          const shareInput = document.createElement("input");
+          shareInput.type = "text";
+          shareInput.placeholder = "對方 userId";
+          shareInput.style.width = "120px";
+          shareCell.appendChild(shareInput);
+
+          const shareBtn = document.createElement("button");
+          shareBtn.textContent = "分享";
+          shareBtn.onclick = async function () {
+            const targetUserId = shareInput.value.trim();
+            if (!targetUserId) {
+              alert("請輸入對方 userId");
+              return;
+            }
+            shareBtn.disabled = true;
+            shareBtn.textContent = "分享中...";
+            try {
+              const response = await fetch(
+                "/api/rag/users/engines/" + engine.id + "/share",
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: "Bearer " + authToken,
+                  },
+                  body: JSON.stringify({ targetUserId: targetUserId }),
+                }
+              );
+              const data = await response.json();
+              if (data.success) {
+                alert("分享成功！");
+              } else {
+                alert("分享失敗: " + data.error);
+              }
+            } catch (error) {
+              alert("分享錯誤: " + error.message);
+            }
+            shareBtn.disabled = false;
+            shareBtn.textContent = "分享";
+          };
+          shareCell.appendChild(shareBtn);
+          row.appendChild(shareCell);
+
+          tableBody.appendChild(row);
         });
-        const data = await response.json();
-        if (data.success) {
-          alert('分享成功！');
-        } else {
-          alert('分享失敗: ' + data.error);
-        }
-      } catch (error) {
-        alert('分享錯誤: ' + error.message);
       }
-      shareBtn.disabled = false;
-      shareBtn.textContent = '分享';
-    };
-    shareCell.appendChild(shareBtn);
-    row.appendChild(shareCell);
 
-    tableBody.appendChild(row);
-  });
-}
-      
       // 填充引擎下拉選單
       function populateEngineSelects(engines) {
         const selects = [
-          document.getElementById('engineForUpload'),
-          document.getElementById('engineForDocuments'),
-          document.getElementById('engineForQuery')
+          document.getElementById("engineForUpload"),
+          document.getElementById("engineForDocuments"),
+          document.getElementById("engineForQuery"),
         ];
-        
-        selects.forEach(function(select) {
-          select.innerHTML = '';
-          engines.forEach(function(engine) {
-            const option = document.createElement('option');
+
+        selects.forEach(function (select) {
+          select.innerHTML = "";
+          engines.forEach(function (engine) {
+            const option = document.createElement("option");
             option.value = engine.id;
             option.textContent = engine.name;
             select.appendChild(option);
           });
         });
       }
-      
+
       // 刪除 RAG Engine
       async function deleteEngine(engineId) {
-        if (!confirm('確定要刪除 ID 為 ' + engineId + ' 的 RAG Engine 嗎？')) {
+        if (!confirm("確定要刪除 ID 為 " + engineId + " 的 RAG Engine 嗎？")) {
           return;
         }
-        
+
         try {
-          const response = await fetch('/api/rag/users/' + currentUserId + '/engines/' + engineId, {
-            method: 'DELETE',
-            headers: {
-              'Authorization': 'Bearer ' + authToken,
-            },
-          });
-          
+          const response = await fetch(
+            "/api/rag/users/" + currentUserId + "/engines/" + engineId,
+            {
+              method: "DELETE",
+              headers: {
+                Authorization: "Bearer " + authToken,
+              },
+            }
+          );
+
           const data = await response.json();
-          
+
           if (data.success) {
-            alert('RAG Engine 已成功刪除');
+            alert("RAG Engine 已成功刪除");
             listEngines();
           } else {
-            alert('刪除失敗: ' + data.error);
+            alert("刪除失敗: " + data.error);
           }
         } catch (error) {
-          alert('Error: ' + error.message);
+          alert("Error: " + error.message);
         }
       }
-      
+
       // 上傳文件函數
       async function uploadFile() {
-        const engineId = document.getElementById('engineForUpload').value;
-        const fileInput = document.getElementById('fileToUpload');
-        
+        const engineId = document.getElementById("engineForUpload").value;
+        const fileInput = document.getElementById("fileToUpload");
+
         if (!engineId) {
-          alert('請選擇一個 RAG Engine');
+          alert("請選擇一個 RAG Engine");
           return;
         }
-        
+
         if (fileInput.files.length === 0) {
-          alert('請選擇至少一個文件');
+          alert("請選擇至少一個文件");
           return;
         }
-        
+
         const totalFiles = fileInput.files.length;
         let successCount = 0;
         let failCount = 0;
-        
+
         for (let i = 0; i < fileInput.files.length; i++) {
           const file = fileInput.files[i];
-          
+
           try {
-            document.getElementById('uploadFileResponse').textContent = '上傳文件 ' + (i + 1) + '/' + totalFiles + ': ' + file.name + '，請稍候...';
-            
+            document.getElementById("uploadFileResponse").textContent =
+              "上傳文件 " +
+              (i + 1) +
+              "/" +
+              totalFiles +
+              ": " +
+              file.name +
+              "，請稍候...";
+
             const formData = new FormData();
-            formData.append('file', file);
-            formData.append('ragId', engineId);
-            
-            const response = await fetch('/api/rag/users/' + currentUserId + '/upload', {
-              method: 'POST',
-              headers: {
-                'Authorization': 'Bearer ' + authToken,
-              },
-              body: formData,
-            });
-            
+            formData.append("file", file);
+            formData.append("ragId", engineId);
+
+            const response = await fetch(
+              "/api/rag/users/" + currentUserId + "/upload",
+              {
+                method: "POST",
+                headers: {
+                  Authorization: "Bearer " + authToken,
+                },
+                body: formData,
+              }
+            );
+
             const data = await response.json();
-            
+
             if (data.success) {
               successCount++;
-              document.getElementById('uploadFileResponse').textContent += '\n✅ ' + file.name + ' 上傳成功';
-              document.getElementById('uploadFileResponse').className = 'response success';
+              document.getElementById("uploadFileResponse").textContent +=
+                "\n✅ " + file.name + " 上傳成功";
+              document.getElementById("uploadFileResponse").className =
+                "response success";
             } else {
               failCount++;
-              document.getElementById('uploadFileResponse').textContent += '\n❌ ' + file.name + ' 上傳失敗: ' + data.error;
-              document.getElementById('uploadFileResponse').className = 'response error';
+              document.getElementById("uploadFileResponse").textContent +=
+                "\n❌ " + file.name + " 上傳失敗: " + data.error;
+              document.getElementById("uploadFileResponse").className =
+                "response error";
             }
           } catch (error) {
             failCount++;
-            document.getElementById('uploadFileResponse').textContent += '\n❌ ' + file.name + ' 上傳錯誤: ' + error.message;
-            document.getElementById('uploadFileResponse').className = 'response error';
+            document.getElementById("uploadFileResponse").textContent +=
+              "\n❌ " + file.name + " 上傳錯誤: " + error.message;
+            document.getElementById("uploadFileResponse").className =
+              "response error";
           }
         }
-        
-        fileInput.value = '';
-        document.getElementById('uploadFileResponse').textContent += '\n\n📊 上傳完成！總共處理 ' + totalFiles + ' 個文件（成功：' + successCount + '，失敗：' + failCount + '）';
+
+        fileInput.value = "";
+        document.getElementById("uploadFileResponse").textContent +=
+          "\n\n📊 上傳完成！總共處理 " +
+          totalFiles +
+          " 個文件（成功：" +
+          successCount +
+          "，失敗：" +
+          failCount +
+          "）";
       }
-      
+
       // 列出文件
       async function listDocuments() {
-        const engineId = document.getElementById('engineForDocuments').value;
-        
+        const engineId = document.getElementById("engineForDocuments").value;
+
         if (!engineId) {
-          alert('請選擇一個 RAG Engine');
+          alert("請選擇一個 RAG Engine");
           return;
         }
-        
+
         try {
-          const response = await fetch('/api/rag/users/' + currentUserId + '/engines/' + engineId + '/documents', {
-            method: 'GET',
-            headers: {
-              'Authorization': 'Bearer ' + authToken,
-            },
-          });
-          
+          const response = await fetch(
+            "/api/rag/users/" +
+              currentUserId +
+              "/engines/" +
+              engineId +
+              "/documents",
+            {
+              method: "GET",
+              headers: {
+                Authorization: "Bearer " + authToken,
+              },
+            }
+          );
+
           const data = await response.json();
-          document.getElementById('listDocumentsResponse').textContent = JSON.stringify(data, null, 2);
-          
+          document.getElementById("listDocumentsResponse").textContent =
+            JSON.stringify(data, null, 2);
+
           if (data.success) {
             let documentsList = [];
-            
+
             if (Array.isArray(data.documents)) {
               documentsList = data.documents;
-            } else if (data.documents && typeof data.documents === 'object') {
-              documentsList = Object.entries(data.documents).map(function(entry) {
+            } else if (data.documents && typeof data.documents === "object") {
+              documentsList = Object.entries(data.documents).map(function (
+                entry
+              ) {
                 return {
                   id: entry[0],
                   fileId: entry[0],
                   originalFileName: entry[1],
                   displayName: entry[1],
-                  filename: entry[1]
+                  filename: entry[1],
                 };
               });
             } else {
               documentsList = [];
             }
-            
+
             populateDocumentsTable(documentsList, engineId);
-            document.getElementById('listDocumentsResponse').className = 'response success';
+            document.getElementById("listDocumentsResponse").className =
+              "response success";
           } else {
-            document.getElementById('listDocumentsResponse').className = 'response error';
+            document.getElementById("listDocumentsResponse").className =
+              "response error";
           }
         } catch (error) {
-          document.getElementById('listDocumentsResponse').textContent = 'Error: ' + error.message;
-          document.getElementById('listDocumentsResponse').className = 'response error';
+          document.getElementById("listDocumentsResponse").textContent =
+            "Error: " + error.message;
+          document.getElementById("listDocumentsResponse").className =
+            "response error";
         }
       }
-      
+
       // 填充文件表格函數
       function populateDocumentsTable(documents, engineId) {
-        const tableBody = document.getElementById('documentsTableBody');
-        tableBody.innerHTML = '';
-        
+        const tableBody = document.getElementById("documentsTableBody");
+        tableBody.innerHTML = "";
+
         if (!Array.isArray(documents)) {
-          console.error('Documents is not an array:', documents);
-          const noDataRow = document.createElement('tr');
-          const noDataCell = document.createElement('td');
+          console.error("Documents is not an array:", documents);
+          const noDataRow = document.createElement("tr");
+          const noDataCell = document.createElement("td");
           noDataCell.colSpan = 3;
-          noDataCell.textContent = '沒有找到文件或數據格式錯誤';
+          noDataCell.textContent = "沒有找到文件或數據格式錯誤";
           noDataRow.appendChild(noDataCell);
           tableBody.appendChild(noDataRow);
           return;
         }
-        
+
         if (documents.length === 0) {
-          const noDataRow = document.createElement('tr');
-          const noDataCell = document.createElement('td');
+          const noDataRow = document.createElement("tr");
+          const noDataCell = document.createElement("td");
           noDataCell.colSpan = 3;
-          noDataCell.textContent = '此 RAG Engine 中沒有文件';
+          noDataCell.textContent = "此 RAG Engine 中沒有文件";
           noDataRow.appendChild(noDataCell);
           tableBody.appendChild(noDataRow);
           return;
         }
-        
-        documents.forEach(function(doc) {
-          const row = document.createElement('tr');
-          
-          const idCell = document.createElement('td');
-          idCell.textContent = doc.fileId || doc.id || 'N/A';
+
+        documents.forEach(function (doc) {
+          const row = document.createElement("tr");
+
+          const idCell = document.createElement("td");
+          idCell.textContent = doc.fileId || doc.id || "N/A";
           row.appendChild(idCell);
-          
-          const nameCell = document.createElement('td');
-          nameCell.textContent = doc.originalFileName || doc.displayName || doc.filename || doc.name || 'Unknown';
+
+          const nameCell = document.createElement("td");
+          nameCell.textContent =
+            doc.originalFileName ||
+            doc.displayName ||
+            doc.filename ||
+            doc.name ||
+            "Unknown";
           row.appendChild(nameCell);
-          
-          const actionsCell = document.createElement('td');
-          const deleteBtn = document.createElement('button');
-          deleteBtn.textContent = '刪除';
-          deleteBtn.onclick = function() { deleteDocument(doc.fileId || doc.id, engineId); };
+
+          const actionsCell = document.createElement("td");
+          const deleteBtn = document.createElement("button");
+          deleteBtn.textContent = "刪除";
+          deleteBtn.onclick = function () {
+            deleteDocument(doc.fileId || doc.id, engineId);
+          };
           actionsCell.appendChild(deleteBtn);
           row.appendChild(actionsCell);
-          
+
           tableBody.appendChild(row);
         });
       }
-      
+
       // 刪除文件
       async function deleteDocument(fileId, engineId) {
-        if (!confirm('確定要刪除 ID 為 ' + fileId + ' 的文件嗎？')) {
+        if (!confirm("確定要刪除 ID 為 " + fileId + " 的文件嗎？")) {
           return;
         }
-        
+
         try {
-          const response = await fetch('/api/rag/users/documents/' + fileId + '?ragId=' + engineId, {
-            method: 'DELETE',
-            headers: {
-              'Authorization': 'Bearer ' + authToken,
-            },
-          });
-          
+          const response = await fetch(
+            "/api/rag/users/documents/" + fileId + "?ragId=" + engineId,
+            {
+              method: "DELETE",
+              headers: {
+                Authorization: "Bearer " + authToken,
+              },
+            }
+          );
+
           const data = await response.json();
-          
+
           if (data.success) {
-            alert('文件已成功刪除');
+            alert("文件已成功刪除");
             listDocuments();
           } else {
-            alert('刪除失敗: ' + data.error);
+            alert("刪除失敗: " + data.error);
           }
         } catch (error) {
-          alert('Error: ' + error.message);
+          alert("Error: " + error.message);
         }
       }
-      
+
       // 查詢 RAG Engine
       async function queryEngine() {
-        const engineId = document.getElementById('engineForQuery').value;
-        const question = document.getElementById('question').value;
-        
+        const engineId = document.getElementById("engineForQuery").value;
+        const question = document.getElementById("question").value;
+
         if (!engineId) {
-          alert('請選擇一個 RAG Engine');
+          alert("請選擇一個 RAG Engine");
           return;
         }
-        
+
         if (!question.trim()) {
-          alert('請輸入問題');
+          alert("請輸入問題");
           return;
         }
-        
+
         try {
-          document.getElementById('queryResponse').textContent = '處理中，請稍候...';
-          
-          const response = await fetch('/api/rag/users/' + currentUserId + '/engines/' + engineId + '/query', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ' + authToken,
-            },
-            body: JSON.stringify({ question: question }),
-          });
-          
+          document.getElementById("queryResponse").textContent =
+            "處理中，請稍候...";
+
+          const response = await fetch(
+            "/api/rag/users/" +
+              currentUserId +
+              "/engines/" +
+              engineId +
+              "/query",
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: "Bearer " + authToken,
+              },
+              body: JSON.stringify({ question: question }),
+            }
+          );
+
           const data = await response.json();
-          
+
           let formattedResponse;
           if (data.success) {
-            formattedResponse = '問題: ' + question + '\n\n回答: ' + data.answer + '\n\n來源:';
-            
+            formattedResponse =
+              "問題: " + question + "\n\n回答: " + data.answer + "\n\n來源:";
+
             if (data.sources && data.sources.length > 0) {
-              data.sources.forEach(function(source, index) {
-                formattedResponse += '\n' + (index + 1) + '. ' + (source.title || source.name || 'Unknown');
+              data.sources.forEach(function (source, index) {
+                formattedResponse +=
+                  "\n" +
+                  (index + 1) +
+                  ". " +
+                  (source.title || source.name || "Unknown");
               });
             } else {
-              formattedResponse += '\n無特定來源';
+              formattedResponse += "\n無特定來源";
             }
-            
-            formattedResponse += '\n\n時間戳: ' + new Date(data.timestamp).toLocaleString();
-            document.getElementById('queryResponse').className = 'response success';
+
+            formattedResponse +=
+              "\n\n時間戳: " + new Date(data.timestamp).toLocaleString();
+            document.getElementById("queryResponse").className =
+              "response success";
           } else {
-            formattedResponse = '錯誤: ' + data.error;
-            document.getElementById('queryResponse').className = 'response error';
+            formattedResponse = "錯誤: " + data.error;
+            document.getElementById("queryResponse").className =
+              "response error";
           }
-          
-          document.getElementById('queryResponse').textContent = formattedResponse;
+
+          document.getElementById("queryResponse").textContent =
+            formattedResponse;
         } catch (error) {
-          document.getElementById('queryResponse').textContent = 'Error: ' + error.message;
-          document.getElementById('queryResponse').className = 'response error';
+          document.getElementById("queryResponse").textContent =
+            "Error: " + error.message;
+          document.getElementById("queryResponse").className = "response error";
         }
       }
     </script>

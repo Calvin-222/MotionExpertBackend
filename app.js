@@ -32,8 +32,9 @@ app.use(express.static(path.join(__dirname, 'public')));
 // Enable CORS for all routes
 app.use(cors());
 
+app.use(express.static('public'));
 app.use('/', indexRouter);
-app.use('/users', usersRouter);
+app.use('/api/users', require('./routes/users'));
 app.use('/api/rag', ragRouter);
 app.use('/api/auth', authRouter); // 
 app.use('/api/friends', friendsRouter); // ADD THIS LINE
