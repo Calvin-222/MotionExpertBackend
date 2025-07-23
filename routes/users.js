@@ -65,7 +65,8 @@ router.post("/avatar", upload.single("avatar"), async (req, res) => {
 // 取得用戶頭像 API
 router.get("/:userId/avatar", async (req, res) => {
   const userId = req.params.userId;
-  const fileName = `${userId}.jpg`; // 或你的檔案格式
+  const fileName = `${userId}.jpg`;
+  const file = storage.bucket(BUCKET_NAME).file(fileName);
   const options = {
     version: "v4",
     action: "read",
@@ -73,14 +74,24 @@ router.get("/:userId/avatar", async (req, res) => {
   };
 
   try {
-    const [url] = await storage
-      .bucket(BUCKET_NAME)
-      .file(fileName)
-      .getSignedUrl(options);
-
+    // 檢查檔案是否存在
+    const [exists] = await file.exists();
+    if (!exists) {
+      // 直接回傳 default avatar 路徑，讓前端不用判斷
+      return res.json({
+        success: false,
+        avatarurl: "/stylesheets/default-avatar.jpg",
+        error: "找不到頭像",
+      });
+    }
+    const [url] = await file.getSignedUrl(options);
     res.json({ success: true, avatarurl: url });
   } catch (err) {
-    res.json({ success: false, error: "找不到頭像" });
+    res.json({
+      success: false,
+      avatarurl: "/stylesheets/default-avatar.jpg",
+      error: "找不到頭像",
+    });
   }
 });
 
