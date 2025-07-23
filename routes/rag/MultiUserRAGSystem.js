@@ -3,6 +3,7 @@ const QueryOperations = require("./queryOperations");
 const EngineManagement = require("./engineManagement");
 // 🔧 修正路徑 - 從 config 目錄引入資料庫連接
 const { pool } = require("../../config/database");
+const { all } = require("../friends");
 
 class MultiUserRAGSystem {
   constructor() {
@@ -21,7 +22,14 @@ class MultiUserRAGSystem {
     const queryOwn = `SELECT r.* FROM rag r WHERE r.userid = ?`;
     const [ownResults] = await this.pool.execute(queryOwn, [userId]);
     allEngines.push(...ownResults.map(e => ({...e, isOwner: true, comingFrom: "yourself"})));
-    
+    // Get public engines
+    const queryPublic = `  
+      SELECT *
+      FROM rag 
+      where visibility = 'Public'
+      `;      
+      const [publicResults] = await this.pool.execute(queryPublic);
+    allEngines.push(...publicResults.map(e => ({...e, isOwner: false, comingFrom: "Public"})));
     // Get shared engines
     const queryShared = `
       SELECT r.*, u.username as owner_name
