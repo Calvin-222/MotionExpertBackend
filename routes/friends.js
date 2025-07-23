@@ -10,6 +10,7 @@ router.get('/search-users',authenticateToken, async (req, res) => {
   try {
     const searchTerm = req.query.search || '';
     const currentUsername = req.user.username;
+    const currentUserId = req.user.userId;
 
 
     if (!searchTerm || searchTerm.trim().length < 3) {
@@ -27,11 +28,7 @@ router.get('/search-users',authenticateToken, async (req, res) => {
       SELECT u.username,
         EXISTS (
           SELECT 1 FROM friendship f 
-          WHERE (
-            (f.userid = u.userid AND f.friendid = (SELECT userid FROM users WHERE username = ?))
-            OR 
-            (f.userid = (SELECT userid FROM users WHERE username = ?) AND f.friendid = u.userid)
-          )
+          WHERE f.userid = ? AND f.friendid = u.userid
         ) as isFriend
       FROM users u 
       WHERE u.username LIKE ? AND u.username != ?
@@ -39,8 +36,7 @@ router.get('/search-users',authenticateToken, async (req, res) => {
     `;
 
     const [users] = await pool.execute(query, [
-      currentUsername,
-      currentUsername,
+      currentUserId,
       `%${searchTerm}%`,
       currentUsername
     ]);
