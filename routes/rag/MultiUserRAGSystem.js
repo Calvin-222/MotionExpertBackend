@@ -26,9 +26,9 @@ class MultiUserRAGSystem {
     const queryPublic = `  
       SELECT *
       FROM rag 
-      where visibility = 'Public'
+      where visibility = 'Public' And userid != ?
       `;      
-      const [publicResults] = await this.pool.execute(queryPublic);
+      const [publicResults] = await this.pool.execute(queryPublic, [userId]);
     allEngines.push(...publicResults.map(e => ({...e, isOwner: false, comingFrom: "Public"})));
     // Get shared engines
     const queryShared = `
