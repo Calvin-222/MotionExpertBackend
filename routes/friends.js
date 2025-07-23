@@ -22,17 +22,39 @@ router.get('/search-users',authenticateToken, async (req, res) => {
     }
 
 
-    let query = 'SELECT username FROM users WHERE username LIKE ? AND username != ?';
-    let queryParams = [`%${searchTerm}%`, currentUsername];
+    // Get users with their friendship status (checking both directions)
+    const query = `
+      SELECT u.username,
+        EXISTS (
+          SELECT 1 FROM friendship f 
+          WHERE (
+            (f.userid = u.userid AND f.friendid = (SELECT userid FROM users WHERE username = ?))
+            OR 
+            (f.userid = (SELECT userid FROM users WHERE username = ?) AND f.friendid = u.userid)
+          )
+        ) as isFriend
+      FROM users u 
+      WHERE u.username LIKE ? AND u.username != ?
+      ORDER BY u.created_at DESC LIMIT 50
+    `;
 
-    query += ' ORDER BY created_at DESC LIMIT 50';
+    const [users] = await pool.execute(query, [
+      currentUsername,
+      currentUsername,
+      `%${searchTerm}%`,
+      currentUsername
+    ]);
 
-    const [users] = await pool.execute(query, queryParams);
+    // Convert isFriend from 0/1 to boolean
+    const usersWithFriendStatus = users.map(user => ({
+      username: user.username,
+      isFriend: !!user.isFriend
+    }));
 
     res.json({
       success: true,
-      users: users,
-      count: users.length
+      users: usersWithFriendStatus,
+      count: usersWithFriendStatus.length
     });
   } catch (error) {
     console.error('Search error:', error);
