@@ -12,7 +12,7 @@ const BUCKET_NAME = "motion_expert_user_icon";
 // Multer 設定（記憶體儲存）
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  limits: { fileSize: 10 * 1024 * 1024 }, 
 });
 
 // 上傳頭像 API
