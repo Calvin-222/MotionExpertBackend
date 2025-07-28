@@ -451,16 +451,11 @@ class FileOperations {
         const originalName = fileMapping.success
           ? fileMapping.mapping[ragFileId] || ragFileId
           : ragFileId;
-
         return {
           id: ragFileId,
-          name: originalName, // 🆕 使用原始文件名
-          displayName: file.displayName || originalName,
-          size: "unknown",
-          type: "document",
-          uploadTime: file.createTime || "unknown",
-          source: file.ragFileSource || "unknown",
-          corpusName: corpusName,
+          name: originalName,
+          uploadTime: file.uploadTime || null,
+          ...file,
         };
       });
 

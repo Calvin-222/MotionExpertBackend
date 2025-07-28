@@ -3,6 +3,19 @@ const { VertexAI } = require("@google-cloud/vertexai");
 const { GoogleAuth } = require("google-auth-library");
 const { Storage } = require("@google-cloud/storage");
 
+// 環境變數檢查
+if (!process.env.DB_HOST) {
+  require("dotenv").config();
+}
+
+// debug log
+console.log(
+  "[DEBUG] RAG DB config:",
+  process.env.DB_USER,
+  process.env.DB_PASSWORD,
+  process.env.DB_HOST
+);
+
 // 資料庫配置
 const dbConfig = {
   host: process.env.DB_HOST,
