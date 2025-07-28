@@ -4,10 +4,9 @@ const {
   storage,
   PROJECT_ID,
   LOCATION,
-  BUCKET_NAME,
-  dbPool,
+  BUCKET_NAME
 } = require("./config");
-
+ const { pool } = require("../../config/database");
 class FileOperations {
   constructor() {
     this.auth = auth;
@@ -15,7 +14,7 @@ class FileOperations {
     this.projectId = PROJECT_ID;
     this.location = LOCATION;
     this.bucketName = BUCKET_NAME;
-    this.db = dbPool;
+    this.db = pool;
     // 添加速率限制
     this.lastApiCall = 0;
     this.minApiInterval = 2000; // 2秒間隔
