@@ -816,62 +816,65 @@ class EngineManagement {
   }
   async shareRAGEngineToUser(ownerId, ragId, targetUsername) {
     try {
+      console.log(`🔄 === 开始分享流程（完全移除好友限制） ===`);
+      console.log(`👤 Owner ID: ${ownerId}`);
+      console.log(`🎯 Target Username: ${targetUsername}`);
+      console.log(`🔧 RAG ID: ${ragId}`);
+
       // 檢查 owner 是否真的擁有這個 engine
       const [rows] = await this.db.execute(
         "SELECT * FROM rag WHERE ragid = ? AND userid = ?",
         [ragId, ownerId]
       );
+      console.log(`📊 Engine ownership check: Found ${rows.length} matching engines`);
       if (rows.length === 0) {
+        console.log(`❌ Engine ownership failed for owner ${ownerId}, engine ${ragId}`);
         return { success: false, error: "您沒有權限分享此 RAG Engine" };
       }
 
-      // 根據 username 查找目標用戶的 userid
+      // 根據 username 查找目標用戶的 userid（任何注册用户）
       const [userRows] = await this.db.execute(
         "SELECT userid FROM users WHERE username = ?",
         [targetUsername]
       );
+      console.log(`👥 User lookup: Found ${userRows.length} users with username '${targetUsername}'`);
       if (userRows.length === 0) {
+        console.log(`❌ User not found: ${targetUsername}`);
         return { success: false, error: "找不到指定的用戶名" };
       }
       const targetUserId = userRows[0].userid;
+      console.log(`✅ Target User ID: ${targetUserId}`);
 
-      // 檢查是否是好友關係 (支援 known 和 Known 字段)
-      const [friendshipRows1] = await this.db.execute(
-        "SELECT * FROM friendship WHERE (userid = ? AND friendid = ? AND known = 'true') OR (userid = ? AND friendid = ? AND known = 'true')",
-        [ownerId, targetUserId, targetUserId, ownerId]
-      );
-      
-      const [friendshipRows2] = await this.db.execute(
-        "SELECT * FROM friendship WHERE (userid = ? AND friendid = ? AND Known = 'true') OR (userid = ? AND friendid = ? AND Known = 'true')",
-        [ownerId, targetUserId, targetUserId, ownerId]
-      );
-
-      if (friendshipRows1.length === 0 && friendshipRows2.length === 0) {
-        return { success: false, error: "只能分享給您的好友" };
-      }
+      // 🚫 完全移除好友验证 - 可以分享给任何用户
+      console.log(`✅ === 跳过好友验证，可分享给任何注册用户 ===`);
 
       // 檢查是否已經分享過
       const [existing] = await this.db.execute(
         "SELECT * FROM private_rag WHERE ragid = ? AND userid = ?",
         [ragId, targetUserId]
       );
+      console.log(`📋 Existing share check: Found ${existing.length} existing shares`);
       if (existing.length > 0) {
+        console.log(`❌ Already shared to user ${targetUsername}`);
         return { success: false, error: "已經分享給此用戶" };
       }
 
       // 執行分享
+      console.log(`✅ === 执行分享给任何用户 ===`);
       await this.db.execute(
         "INSERT INTO private_rag (ragid, userid) VALUES (?, ?)",
         [ragId, targetUserId]
       );
+      console.log(`🎉 分享成功完成！Engine ${ragId} 已分享给任何用户 ${targetUsername} (${targetUserId})`);
       
       return { 
         success: true, 
-        message: `RAG Engine 已成功分享給 ${targetUsername}`,
+        message: `RAG Engine 已成功分享給任何用户 ${targetUsername}`,
         targetUsername: targetUsername,
         targetUserId: targetUserId
       };
     } catch (error) {
+      console.error(`❌ 分享错误:`, error);
       return { success: false, error: error.message };
     }
   }
