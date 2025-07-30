@@ -441,19 +441,24 @@ class FileOperations {
 
       const files = response.data.ragFiles || [];
 
-      // 🆕 獲取 ragId 以查詢文件名映射
+      // 獲取 ragId 以查詢文件名映射
       const ragId = corpusName.split("/").pop();
       const fileMapping = await this.getFileNameMapping(ragId);
 
       const formattedFiles = files.map((file) => {
         const ragFileId = file.name ? file.name.split("/").pop() : "unknown";
-        const originalName = fileMapping.success
-          ? fileMapping.mapping[ragFileId] || ragFileId
-          : ragFileId;
+        const mappingData = fileMapping.success
+          ? fileMapping.mapping[ragFileId]
+          : null;
+        
+        const originalName = mappingData ? mappingData.filename : ragFileId;
+        const createdAt = mappingData ? mappingData.created_at : null;
+        
         return {
           id: ragFileId,
           name: originalName,
           uploadTime: file.uploadTime || null,
+          created_at: createdAt,
           ...file,
         };
       });
@@ -900,34 +905,38 @@ class FileOperations {
   }
 
   async getFileNameMapping(ragId) {
-    try {
-      const query = `
-        SELECT fileid, filename, id
-        FROM rag_file_name 
-        WHERE ragid = ?
-        ORDER BY created_at DESC
-      `;
-      const [results] = await this.db.execute(query, [ragId]);
+  try {
+    const query = `
+      SELECT fileid, filename, id, created_at
+      FROM rag_file_name 
+      WHERE ragid = ?
+      ORDER BY created_at DESC
+    `;
+    const [results] = await this.db.execute(query, [ragId]);
 
-      const mapping = {};
-      results.forEach((row) => {
-        mapping[row.fileid] = row.filename;
-      });
+    const mapping = {};
+    results.forEach((row) => {
+      // Make sure this returns an object, not a string
+      mapping[row.fileid] = {
+        filename: row.filename,
+        created_at: row.created_at
+      };
+    });
 
-      return {
-        success: true,
-        mapping: mapping,
-        count: results.length,
-      };
-    } catch (error) {
-      console.error("Error getting file name mapping:", error);
-      return {
-        success: false,
-        error: error.message,
-        mapping: {},
-      };
-    }
+    return {
+      success: true,
+      mapping: mapping,
+      count: results.length,
+    };
+  } catch (error) {
+    console.error("Error getting file name mapping:", error);
+    return {
+      success: false,
+      error: error.message,
+      mapping: {},
+    };
   }
+}
 
   // 🔧 修復的 importToRAG 方法 - 使用最新的 Google AI Platform API 格式
   async importToRAG(ragId, filePath, originalFileName) {
