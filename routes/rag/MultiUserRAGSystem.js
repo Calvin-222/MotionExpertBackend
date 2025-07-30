@@ -1,7 +1,7 @@
 const FileOperations = require("./fileOperations");
 const QueryOperations = require("./queryOperations");
 const EngineManagement = require("./engineManagement");
-// 🔧 修正路徑 - 從 config 目錄引入資料庫連接
+// 🔧 Fix path - import database connection from config directory
 const { pool } = require("../../config/database");
 const { all } = require("../friends");
 
@@ -10,10 +10,10 @@ class MultiUserRAGSystem {
     this.fileOps = new FileOperations();
     this.queryOps = new QueryOperations();
     this.engineMgmt = new EngineManagement();
-    this.pool = pool; // 直接使用資料庫連接池
+    this.pool = pool; // Directly use database connection pool
   }
 
-  // 🔧 添加缺失的方法：獲取用戶的 RAG engines
+  // 🔧 Add missing method: Get user's RAG engines
   async getAllUserEngines(userId) {
   try {
     const allEngines = [];
@@ -52,7 +52,7 @@ class MultiUserRAGSystem {
     `;
     
     const [friendResults] = await this.pool.execute(queryFriends, [userId, userId]);
-    allEngines.push(...friendResults.map(e => ({...e, isOwner: false, comingFrom: `${e.owner_name} (朋友)`})));
+    allEngines.push(...friendResults.map(e => ({...e, isOwner: false, comingFrom: `${e.owner_name} (Friends)`})));
     
     return { success: true, engines: allEngines };
   } catch (error) {
@@ -103,12 +103,12 @@ async updateEngineVisibility(userId, engineId, visibility) {
     };
   }
 }
-  // 🔧 修正：創建用戶 RAG engine - 使用真正的 Google Cloud corpus 創建
+  // 🔧 Fix: Create user RAG engine - using real Google Cloud corpus creation
   async createUserRAGEngine(userId, engineName, description = "") {
     try {
       console.log(`🏗️ Creating RAG engine for user ${userId}: ${engineName}`);
 
-      // 使用 EngineManagement 創建真正的 Google Cloud RAG Corpus
+      // Use EngineManagement to create real Google Cloud RAG Corpus
       const result = await this.engineMgmt.createUserRAGEngine(
         userId,
         engineName,
@@ -120,7 +120,7 @@ async updateEngineVisibility(userId, engineId, visibility) {
           success: true,
           message: result.message,
           engine: {
-            ragid: result.corpusId, // 重要：使用真正的 corpus ID
+            ragid: result.corpusId, // Important: use real corpus ID
             id: result.corpusId,
             name: result.ragName,
             displayName: result.displayName,
@@ -128,11 +128,11 @@ async updateEngineVisibility(userId, engineId, visibility) {
             visibility: result.visibility,
             description: description,
             createdAt: result.createdAt,
-            corpusName: result.corpusName, // 添加 corpus 名稱供調試
+            corpusName: result.corpusName, // Add corpus name for debugging
           },
-          // 保持向後兼容
+          // Maintain backward compatibility
           engineId: result.corpusId,
-          corpusName: result.corpusName, // 添加頂層 corpusName
+          corpusName: result.corpusName, // Add top-level corpusName
         };
       } else {
         return {
@@ -149,7 +149,7 @@ async updateEngineVisibility(userId, engineId, visibility) {
     }
   }
 
-  // 🔧 檢查用戶是否可以訪問 RAG
+  // 🔧 Check if user can access RAG
   // async canUserAccessRAG(userId, ragId) {
   //   try {
   //     const query = `
@@ -169,7 +169,7 @@ async updateEngineVisibility(userId, engineId, visibility) {
 
   async canUserAccessRAG(ragId, userId) {
     try {
-      // 查自己或被分享
+      // Check own or shared
       const query = `
       SELECT COUNT(*) as count FROM rag WHERE ragid = ? AND userid = ?
       UNION ALL
@@ -188,10 +188,10 @@ async updateEngineVisibility(userId, engineId, visibility) {
     }
   }
 
-  // 🔧 從資料庫獲取 RAG Engine
+  // 🔧 Get RAG Engine from database
   async getRAGEngineFromDB(ragId, userId) {
     try {
-      // 先查自己擁有的
+      // First check own engines
       const queryOwn = `
         SELECT r.*
         FROM rag r 
@@ -202,7 +202,7 @@ async updateEngineVisibility(userId, engineId, visibility) {
         return { success: true, ragEngine: ownResults[0] };
       }
 
-      // 查被分享的
+      // Check shared engines
       const queryShared = `
         SELECT r.*, u.username 
         FROM private_rag pr
@@ -217,7 +217,7 @@ async updateEngineVisibility(userId, engineId, visibility) {
       if (sharedResults.length > 0) {
         return { success: true, ragEngine: sharedResults[0] };
       }
-      //friendship funciton
+      // Friendship function
       const queryFriends = `
         SELECT r.*, u.username 
         FROM rag r
@@ -232,7 +232,7 @@ async updateEngineVisibility(userId, engineId, visibility) {
         return { success: true, ragEngine: friendResults[0], accessType: 'friend' };
       }
       
-      return { success: false, error: "找不到指定的 RAG Engine" };
+      return { success: false, error: "Cannot find specified RAG Engine" };
     } catch (error) {
       return { success: false, error: error.message };
     }
@@ -244,29 +244,29 @@ async updateEngineVisibility(userId, engineId, visibility) {
         `📤 Uploading file to RAG engine ${engineId} for user: ${userId}`
       );
 
-      // 檢查用戶權限
+      // Check user permissions
       const hasAccess = await this.canUserAccessRAG(engineId, userId);
       if (!hasAccess) {
         return {
           success: false,
-          error: "您沒有權限上傳文檔到此 RAG Engine",
+          error: "You do not have permission to upload documents to this RAG Engine",
         };
       }
 
-      // 🔧 修正：傳遞完整的參數列表
+      // 🔧 Fix: Pass complete parameter list
       const result = await this.fileOps.uploadToUserRAG(
         userId,
         file,
         fileName,
         engineId,
-        // 傳遞 createUserRAGEngine 回調
+        // Pass createUserRAGEngine callback
         (userId, engineName, description, visibility) =>
           this.createUserRAGEngine(userId, engineName, description),
-        // 傳遞 getRAGEngineFromDB 回調
+        // Pass getRAGEngineFromDB callback
         (ragId) => this.getRAGEngineFromDB(ragId)
       );
 
-      // 🔴 新增：如果導入失敗，將詳細錯誤訊息回傳
+      // 🔴 New: If import fails, return detailed error message
       if (!result.success) {
         return {
           success: false,
@@ -285,12 +285,12 @@ async updateEngineVisibility(userId, engineId, visibility) {
     }
   }
 
-  // 🔧 添加缺失的方法：查詢用戶 RAG
+  // 🔧 Add missing method: Query user RAG
   async queryUserRAG(userId, question, engineId) {
     try {
       console.log(`💬 User ${userId} querying RAG engine: ${engineId}`);
 
-      // 使用查詢操作進行查詢
+      // Use query operations to perform query
       const result = await this.queryOps.queryUserRAG(
         userId,
         question,
@@ -309,14 +309,14 @@ async updateEngineVisibility(userId, engineId, visibility) {
     }
   }
 
-  // 🔧 添加缺失的方法：刪除用戶文檔
+  // 🔧 Add missing method: Delete user document
   async deleteUserDocument(userId, fileId, ragId) {
     try {
       console.log(
         `🗑️ User ${userId} deleting document ${fileId} from RAG ${ragId}`
       );
 
-      // 使用檔案操作刪除文檔
+      // Use file operations to delete document
       const result = await this.fileOps.deleteUserDocument(
         userId,
         fileId,
@@ -334,23 +334,23 @@ async updateEngineVisibility(userId, engineId, visibility) {
     }
   }
 
-  // 📥 導入多個文件到用戶 RAG
+  // 📥 Import multiple files to user RAG
   async importFiles(userId, engineId, files) {
     try {
       console.log(
         `📥 Importing ${files.length} files to RAG engine ${engineId} for user: ${userId}`
       );
 
-      // 檢查用戶是否有權限訪問此 engine
+      // Check if user has permission to access this engine
       const canAccess = await this.canUserAccessRAG(engineId, userId);
       if (!canAccess) {
         return {
           success: false,
-          error: "您無權限訪問此 RAG Engine",
+          error: "You do not have permission to access this RAG Engine",
         };
       }
 
-      // 使用 FileOperations 的新 importFilesFromContent 方法
+      // Use FileOperations' new importFilesFromContent method
       const result = await this.fileOps.importFilesFromContent(
         userId,
         engineId,
