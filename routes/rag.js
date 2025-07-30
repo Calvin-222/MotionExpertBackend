@@ -112,12 +112,12 @@ router.post(
     try {
       const { engineId } = req.params;
       const ownerId = req.user.userId;
-      const { targetUserId } = req.body;
+      const { targetUsername } = req.body;
 
-      if (!targetUserId) {
+      if (!targetUsername) {
         return res
           .status(400)
-          .json({ success: false, error: "targetUserId is required" });
+          .json({ success: false, error: "targetUsername is required" });
       }
 
       const EngineManagement = require("./rag/engineManagement");
@@ -125,7 +125,7 @@ router.post(
       const result = await engineMgmt.shareRAGEngineToUser(
         ownerId,
         engineId,
-        targetUserId
+        targetUsername
       );
 
       if (result.success) {

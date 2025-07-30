@@ -682,16 +682,16 @@
           const shareCell = document.createElement("td");
           const shareInput = document.createElement("input");
           shareInput.type = "text";
-          shareInput.placeholder = "對方 userId";
+          shareInput.placeholder = "對方 username";
           shareInput.style.width = "120px";
           shareCell.appendChild(shareInput);
 
           const shareBtn = document.createElement("button");
           shareBtn.textContent = "分享";
           shareBtn.onclick = async function () {
-            const targetUserId = shareInput.value.trim();
-            if (!targetUserId) {
-              alert("請輸入對方 userId");
+            const targetUsername = shareInput.value.trim();
+            if (!targetUsername) {
+              alert("請輸入對方 username");
               return;
             }
             shareBtn.disabled = true;
@@ -705,12 +705,13 @@
                     "Content-Type": "application/json",
                     Authorization: "Bearer " + authToken,
                   },
-                  body: JSON.stringify({ targetUserId: targetUserId }),
+                  body: JSON.stringify({ targetUsername: targetUsername }),
                 }
               );
               const data = await response.json();
               if (data.success) {
                 alert("分享成功！");
+                shareInput.value = ""; // 清空輸入框
               } else {
                 alert("分享失敗: " + data.error);
               }

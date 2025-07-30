@@ -814,7 +814,7 @@ class EngineManagement {
       };
     }
   }
-  async shareRAGEngineToUser(ownerId, ragId, targetUserId) {
+  async shareRAGEngineToUser(ownerId, ragId, targetUsername) {
     try {
       // 檢查 owner 是否真的擁有這個 engine
       const [rows] = await this.db.execute(
@@ -823,6 +823,31 @@ class EngineManagement {
       );
       if (rows.length === 0) {
         return { success: false, error: "您沒有權限分享此 RAG Engine" };
+      }
+
+      // 根據 username 查找目標用戶的 userid
+      const [userRows] = await this.db.execute(
+        "SELECT userid FROM users WHERE username = ?",
+        [targetUsername]
+      );
+      if (userRows.length === 0) {
+        return { success: false, error: "找不到指定的用戶名" };
+      }
+      const targetUserId = userRows[0].userid;
+
+      // 檢查是否是好友關係 (支援 known 和 Known 字段)
+      const [friendshipRows1] = await this.db.execute(
+        "SELECT * FROM friendship WHERE (userid = ? AND friendid = ? AND known = 'true') OR (userid = ? AND friendid = ? AND known = 'true')",
+        [ownerId, targetUserId, targetUserId, ownerId]
+      );
+      
+      const [friendshipRows2] = await this.db.execute(
+        "SELECT * FROM friendship WHERE (userid = ? AND friendid = ? AND Known = 'true') OR (userid = ? AND friendid = ? AND Known = 'true')",
+        [ownerId, targetUserId, targetUserId, ownerId]
+      );
+
+      if (friendshipRows1.length === 0 && friendshipRows2.length === 0) {
+        return { success: false, error: "只能分享給您的好友" };
       }
 
       // 檢查是否已經分享過
@@ -839,7 +864,13 @@ class EngineManagement {
         "INSERT INTO private_rag (ragid, userid) VALUES (?, ?)",
         [ragId, targetUserId]
       );
-      return { success: true, message: "RAG Engine 已成功分享" };
+      
+      return { 
+        success: true, 
+        message: `RAG Engine 已成功分享給 ${targetUsername}`,
+        targetUsername: targetUsername,
+        targetUserId: targetUserId
+      };
     } catch (error) {
       return { success: false, error: error.message };
     }

@@ -41,6 +41,11 @@ router.get('/', function(req, res, next) {
   res.render('index', { title: 'RAG 系統測試界面' });
 });
 
+// 添加 ragtest 路由
+router.get('/ragtest', function(req, res, next) {
+  res.render('index', { title: 'RAG 系統測試界面' });
+});
+
 /* GET API status check */
 router.get("/api/status", function (req, res, next) {
   res.json({
