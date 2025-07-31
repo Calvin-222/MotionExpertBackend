@@ -313,7 +313,7 @@ ${contextTexts}
 
 問題: ${question}
 
-Please use traditioanl chinese to answer，並基於文檔內容提供具體和有用的答案:`;
+Please use english to answer，並基於文檔內容提供具體和有用的答案:`;
 
       console.log(`🚀 Calling Google GenAI SDK with Gemini model...`);
 
