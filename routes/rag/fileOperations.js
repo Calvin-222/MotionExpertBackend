@@ -4,9 +4,9 @@ const {
   storage,
   PROJECT_ID,
   LOCATION,
-  BUCKET_NAME
+  BUCKET_NAME,
 } = require("./config");
- const { pool } = require("../../config/database");
+const { pool } = require("../../config/database");
 class FileOperations {
   constructor() {
     this.auth = auth;
@@ -56,7 +56,7 @@ class FileOperations {
           "[Warning] fileBuffer is not a Buffer, will convert to Buffer (may cause PDF corruption if input is not binary)"
         );
         if (typeof fileBuffer === "string") {
-          fileBuffer = Buffer.from(fileBuffer, "binary");
+          fileBuffer = Buffer.from(fileBuffer, "utf8");
         } else if (Array.isArray(fileBuffer)) {
           fileBuffer = Buffer.from(fileBuffer);
         } else {
@@ -450,10 +450,10 @@ class FileOperations {
         const mappingData = fileMapping.success
           ? fileMapping.mapping[ragFileId]
           : null;
-        
+
         const originalName = mappingData ? mappingData.filename : ragFileId;
         const createdAt = mappingData ? mappingData.created_at : null;
-        
+
         return {
           id: ragFileId,
           name: originalName,
@@ -905,38 +905,38 @@ class FileOperations {
   }
 
   async getFileNameMapping(ragId) {
-  try {
-    const query = `
+    try {
+      const query = `
       SELECT fileid, filename, id, created_at
       FROM rag_file_name 
       WHERE ragid = ?
       ORDER BY created_at DESC
     `;
-    const [results] = await this.db.execute(query, [ragId]);
+      const [results] = await this.db.execute(query, [ragId]);
 
-    const mapping = {};
-    results.forEach((row) => {
-      // Make sure this returns an object, not a string
-      mapping[row.fileid] = {
-        filename: row.filename,
-        created_at: row.created_at
+      const mapping = {};
+      results.forEach((row) => {
+        // Make sure this returns an object, not a string
+        mapping[row.fileid] = {
+          filename: row.filename,
+          created_at: row.created_at,
+        };
+      });
+
+      return {
+        success: true,
+        mapping: mapping,
+        count: results.length,
       };
-    });
-
-    return {
-      success: true,
-      mapping: mapping,
-      count: results.length,
-    };
-  } catch (error) {
-    console.error("Error getting file name mapping:", error);
-    return {
-      success: false,
-      error: error.message,
-      mapping: {},
-    };
+    } catch (error) {
+      console.error("Error getting file name mapping:", error);
+      return {
+        success: false,
+        error: error.message,
+        mapping: {},
+      };
+    }
   }
-}
 
   // 🔧 修復的 importToRAG 方法 - 使用最新的 Google AI Platform API 格式
   async importToRAG(ragId, filePath, originalFileName) {
