@@ -327,7 +327,7 @@ Please use traditioanl chinese to answer，並基於文檔內容提供具體和�
           }]
         }],
         config: {
-          temperature: 0.1,
+          temperature: 0.2,
           topK: 32,
           topP: 1,
           maxOutputTokens: 65536,
