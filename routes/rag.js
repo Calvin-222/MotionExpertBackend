@@ -87,8 +87,12 @@ router.patch(
       const { engineId } = req.params;
       const { visibility } = req.body;
       const userId = req.user.userId;
-     
-      const result = await ragSystem.updateEngineVisibility(userId, engineId, visibility);
+
+      const result = await ragSystem.updateEngineVisibility(
+        userId,
+        engineId,
+        visibility
+      );
 
       if (result.success) {
         res.json(result);
@@ -96,10 +100,10 @@ router.patch(
         res.status(400).json(result);
       }
     } catch (error) {
-      console.error('Error updating engine visibility:', error);
-      res.status(500).json({ 
-        success: false, 
-        error: 'Internal server error' 
+      console.error("Error updating engine visibility:", error);
+      res.status(500).json({
+        success: false,
+        error: "Internal server error",
       });
     }
   }
@@ -197,7 +201,7 @@ router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
     }
 
     const result = await ragSystem.getAllUserEngines(targetUserId);
-    
+
     if (!result.success) {
       return res.status(500).json({
         success: false,
@@ -267,17 +271,17 @@ router.post(
         `📤 User ${targetUserId} uploading file: ${file.originalname} to engine: ${ragId}`
       );
 
-      // 🔧 修正：確保正確傳遞文件數據
+      // 🔧 修正：直接傳遞原始 Buffer，避免破壞二進位檔案
       const fileData = {
         name: file.originalname,
-        content: file.buffer.toString("utf-8"), // 將 Buffer 轉換為字串
-        buffer: file.buffer, // 同時保留原始 Buffer
+        // 移除 content: file.buffer.toString("utf-8") 這一行，這是造成 PDF 損毀的主因
+        buffer: file.buffer, // 只保留原始 Buffer
       };
 
       // 復用現有的上傳邏輯
       const result = await ragSystem.uploadToUserRAG(
         targetUserId,
-        fileData, // 傳遞包含多種格式的文件數據
+        fileData, // 現在 fileData 只包含 buffer，下游函數會正確處理
         file.originalname,
         ragId
       );
@@ -416,8 +420,6 @@ router.delete(
     }
   }
 );
-
-
 
 // 🔗 獲取可訪問的 RAG Engines
 router.get("/users/accessible-engines", authenticateToken, async (req, res) => {
@@ -634,7 +636,6 @@ router.get("/engines/overview", async (req, res) => {
   }
 });
 
-
 // 📥 文件導入端點 (支援 JSON 格式)
 router.post(
   "/users/:userId/engines/:engineId/import",
@@ -694,7 +695,6 @@ router.post(
   }
 );
 
-
 // 🗑️ 刪除 RAG Engine 端點
 router.delete(
   "/users/:userId/engines/:engineId",
@@ -747,6 +747,54 @@ router.delete(
         success: false,
         error: "Failed to delete RAG engine",
       });
+    }
+  }
+);
+
+// 設定 multer 將檔案暫存在記憶體中，它會提供一個 buffer
+const upload = multer({ storage: multer.memoryStorage() });
+
+// 假設你的上傳 API 是這樣的
+// 1. 使用 authenticateToken 驗證
+// 2. 使用 multer 中介軟體 `upload.single('file')` 來處理檔案
+//    'file' 必須與你前端 <input type="file" name="file"> 的 name 屬性一致
+router.post(
+  "/engines/:engineId/upload",
+  authenticateToken,
+  upload.single("file"), // <-- 關鍵在這裡
+  async (req, res) => {
+    try {
+      // multer 處理後，檔案資訊會在 req.file
+      if (!req.file) {
+        return res
+          .status(400)
+          .json({ success: false, message: "沒有上傳檔案" });
+      }
+
+      const { engineId } = req.params;
+      const userId = req.user.userId;
+
+      // 從 req.file 中取得檔名和 Buffer
+      const fileName = req.file.originalname;
+      const fileBuffer = req.file.buffer; // <-- 這就是正確的二進位 Buffer
+
+      // 現在，用這個正確的 buffer 去呼叫你現有的邏輯
+      const result = await ragSystem.fileOps.uploadToUserRAG(
+        userId,
+        { buffer: fileBuffer }, // 確保傳遞的是 buffer
+        fileName,
+        engineId
+        // ... 傳入其他需要的參數
+      );
+
+      if (result.success) {
+        res.json(result);
+      } else {
+        res.status(500).json(result);
+      }
+    } catch (error) {
+      console.error("檔案上傳路由出錯:", error);
+      res.status(500).json({ success: false, message: "伺服器內部錯誤" });
     }
   }
 );
