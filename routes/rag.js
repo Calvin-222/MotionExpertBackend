@@ -344,7 +344,14 @@ router.delete(
         });
       }
 
-      const result = await ragSystem.deleteUserDocument(userId, fileId, ragId);
+      // 🔧 修正：傳遞 canUserAccessRAG 函數
+      const fileOps = new (require("./rag/fileOperations"))();
+      const result = await fileOps.deleteUserDocument(
+        userId,
+        fileId,
+        ragId,
+        ragSystem.canUserAccessRAG.bind(ragSystem) // 傳遞權限檢查函數
+      );
 
       if (result.success) {
         res.json({
@@ -352,6 +359,10 @@ router.delete(
           message: result.message,
           fileId: fileId,
           ragId: ragId,
+          details: {
+            ragDeleted: result.ragDeleted,
+            dbDeleted: result.dbDeleted,
+          },
         });
       } else {
         // 🔧 修正：安全的錯誤檢查

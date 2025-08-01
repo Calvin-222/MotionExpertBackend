@@ -482,207 +482,83 @@ class FileOperations {
   }
 
   // 🗑️ 智能文檔刪除 - 處理資料庫與 RAG Engine 不同步的情況
-  async deleteUserDocument(userId, ragFileId, ragId = null, canUserAccessRAG) {
+  async deleteUserDocument(userId, ragFileId, ragId, canUserAccessRAG) {
     try {
-      let targetRagId = ragId;
-
-      if (!targetRagId) {
-        console.log("No ragId provided, need to implement engine lookup");
-        return {
-          success: false,
-          error: "ragId is required for document deletion",
-        };
+      // 1. 先檢查權限
+      const hasAccess = await canUserAccessRAG(userId, ragId);
+      if (!hasAccess) {
+        return { success: false, error: "沒有權限刪除此檔案" };
       }
 
-      // 檢查用戶權限
-      // const hasAccess = await canUserAccessRAG(userId, targetRagId);
-      // if (!hasAccess) {
-      //   return {
-      //     success: false,
-      //     error: "您沒有權限刪除此文檔",
-      //   };
-      // }
+      // 2. 構建 corpus 名稱
+      const corpusName = `projects/${this.projectId}/locations/${this.location}/ragCorpora/${ragId}`;
 
-      console.log(
-        `🗑️ User ${userId} deleting document ${ragFileId} from RAG ${targetRagId}`
-      );
-
-      // 🔧 第一步：先檢查資料庫中是否有此檔案記錄
-      const dbCheckQuery = `
-        SELECT fileid, filename FROM rag_file_name 
-        WHERE ragid = ? AND fileid = ?
-      `;
-      const [dbFiles] = await this.db.execute(dbCheckQuery, [
-        targetRagId,
-        ragFileId,
-      ]);
-
-      const fileExistsInDB = dbFiles.length > 0;
-      console.log(`📋 檔案在資料庫中存在: ${fileExistsInDB}`);
-
-      if (fileExistsInDB) {
-        console.log(`📄 資料庫檔案記錄: ${dbFiles[0].filename}`);
+      // 3. 先從 Google Cloud RAG 刪除檔案
+      const ragDeleteResult = await this.deleteRAGFile(corpusName, ragFileId);
+      if (!ragDeleteResult.success) {
+        console.warn(
+          `⚠️ Failed to delete from RAG, but continuing with DB cleanup:`,
+          ragDeleteResult.error
+        );
+        // 繼續執行資料庫刪除，即使 RAG 刪除失敗
       }
 
-      // 🔧 第二步：檢查 Google RAG Engine 中的檔案
-      const authClient = await this.auth.getClient();
-      const accessToken = await authClient.getAccessToken();
+      // 4. 從資料庫刪除記錄
+      const query = `DELETE FROM rag_file_name WHERE fileid = ? AND ragid = ?`;
+      const [dbResult] = await this.db.execute(query, [ragFileId, ragId]);
 
-      const corpusName = `projects/${this.projectId}/locations/${this.location}/ragCorpora/${targetRagId}`;
-      const listUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles`;
-
-      let actualFileId = null;
-      let fileExistsInRAG = false;
-
-      try {
-        // 列出 RAG Engine 中的所有檔案
-        const listResponse = await axios.get(listUrl, {
-          headers: {
-            Authorization: `Bearer ${accessToken.token}`,
-            "Content-Type": "application/json",
-          },
-          timeout: 30000,
-        });
-
-        const files = listResponse.data.ragFiles || [];
-        console.log(`📋 RAG Engine 中找到 ${files.length} 個檔案`);
-
-        // 查找匹配的檔案
-        for (const file of files) {
-          const fileIdFromPath = file.name.split("/").pop();
-          console.log(`📄 檢查檔案: ${fileIdFromPath} (${file.displayName})`);
-
-          if (
-            fileIdFromPath === ragFileId ||
-            file.name.includes(ragFileId) ||
-            ragFileId.includes(fileIdFromPath)
-          ) {
-            actualFileId = fileIdFromPath;
-            fileExistsInRAG = true;
-            console.log(`✅ 在 RAG Engine 中找到匹配檔案: ${actualFileId}`);
-            break;
-          }
-        }
-      } catch (listError) {
-        console.error(`❌ 無法列出 RAG Engine 檔案:`, listError.response?.data);
-        // 如果列表檔案失敗，我們仍然可以嘗試刪除
-      }
-
-      console.log(`📊 檔案狀態檢查結果:`);
-      console.log(`   - 資料庫中存在: ${fileExistsInDB}`);
-      console.log(`   - RAG Engine 中存在: ${fileExistsInRAG}`);
-
-      let ragDeleteSuccess = false;
-      let dbDeleteSuccess = false;
-      let gcsDeleteSuccess = false;
-
-      // 🗑️ 第三步：如果檔案在 RAG Engine 中存在，則刪除
-      if (fileExistsInRAG && actualFileId) {
-        try {
-          const deleteUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles/${actualFileId}`;
-          console.log(`🗑️ 從 RAG Engine 刪除檔案: ${deleteUrl}`);
-
-          const response = await axios.delete(deleteUrl, {
-            headers: {
-              Authorization: `Bearer ${accessToken.token}`,
-              "Content-Type": "application/json",
-            },
-            timeout: 30000,
-          });
-
-          console.log(`✅ RAG Engine 刪除成功: ${response.status}`);
-          ragDeleteSuccess = true;
-        } catch (deleteError) {
-          console.error(`❌ RAG Engine 刪除失敗:`, deleteError.response?.data);
-
-          // 如果是 404 錯誤，表示檔案已經不存在
-          if (deleteError.response?.status === 404) {
-            console.log(`📝 檔案已經不存在於 RAG Engine 中 (404)`);
-            ragDeleteSuccess = true;
-          }
-        }
-      } else {
-        console.log(`📝 檔案不存在於 RAG Engine 中，跳過 RAG 刪除`);
-        ragDeleteSuccess = true; // 不存在就算成功
-      }
-
-      // 🗑️ 第四步：從資料庫刪除記錄
-      if (fileExistsInDB) {
-        try {
-          const deleteQuery = `DELETE FROM rag_file_name WHERE ragid = ? AND fileid = ?`;
-          await this.db.execute(deleteQuery, [targetRagId, ragFileId]);
-          console.log(`✅ 資料庫記錄刪除成功`);
-          dbDeleteSuccess = true;
-        } catch (dbError) {
-          console.error(`❌ 資料庫刪除失敗:`, dbError.message);
-        }
-      } else {
-        console.log(`📝 檔案不存在於資料庫中，跳過資料庫刪除`);
-        dbDeleteSuccess = true; // 不存在就算成功
-      }
-
-      // 🗑️ 第五步：嘗試從 Google Cloud Storage 刪除檔案
-      try {
-        if (fileExistsInDB && dbFiles[0].filename) {
-          const originalName = dbFiles[0].filename;
-          const fileExtension = originalName.split(".").pop() || "txt";
-          const fileName = `user-data/${userId}/${ragFileId}.${fileExtension}`;
-
-          const file = this.storage.bucket(this.bucketName).file(fileName);
-          const [exists] = await file.exists();
-
-          if (exists) {
-            await file.delete();
-            console.log(`✅ GCS 檔案刪除成功: ${fileName}`);
-            gcsDeleteSuccess = true;
-          } else {
-            console.log(`📝 GCS 檔案不存在: ${fileName}`);
-            gcsDeleteSuccess = true;
-          }
-        }
-      } catch (gcsError) {
-        console.log(`⚠️ GCS 檔案刪除警告:`, gcsError.message);
-        gcsDeleteSuccess = true; // GCS 錯誤不應該影響整體結果
-      }
-
-      // 🎯 判斷整體刪除結果
-      const overallSuccess = ragDeleteSuccess && dbDeleteSuccess;
-
-      if (overallSuccess) {
+      if (dbResult.affectedRows > 0) {
         return {
           success: true,
-          message: "文檔已成功刪除",
-          deletedFileId: ragFileId,
-          ragId: targetRagId,
-          details: {
-            ragDeleted: ragDeleteSuccess,
-            dbDeleted: dbDeleteSuccess,
-            gcsDeleted: gcsDeleteSuccess,
-            existedInRAG: fileExistsInRAG,
-            existedInDB: fileExistsInDB,
-          },
+          message: "檔案已成功刪除",
+          ragDeleted: ragDeleteResult.success,
+          dbDeleted: true,
         };
       } else {
-        return {
-          success: false,
-          error: "檔案刪除部分失敗",
-          details: {
-            ragDeleted: ragDeleteSuccess,
-            dbDeleted: dbDeleteSuccess,
-            gcsDeleted: gcsDeleteSuccess,
-            existedInRAG: fileExistsInRAG,
-            existedInDB: fileExistsInDB,
-          },
-        };
+        return { success: false, error: "資料庫中找不到該檔案記錄" };
       }
     } catch (error) {
-      console.error(`❌ 刪除檔案時發生錯誤:`, error);
+      console.error("Delete user document error:", error);
+      return { success: false, error: "刪除檔案時發生錯誤" };
+    }
+  }
+
+  // 🗑️ 刪除 Google Cloud RAG 檔案
+  async deleteRAGFile(corpusName, ragFileId) {
+    try {
+      const accessToken = await this.auth.getAccessToken();
+
+      // 構建正確的 RAG File 完整路徑
+      const ragFilePath = `${corpusName}/ragFiles/${ragFileId}`;
+
+      const url = `https://${this.location}-aiplatform.googleapis.com/v1/${ragFilePath}`;
+
+      console.log(`🗑️ Deleting RAG file: ${ragFilePath}`);
+
+      const response = await axios.delete(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.status === 200 || response.status === 204) {
+        console.log(`✅ Successfully deleted RAG file: ${ragFileId}`);
+        return { success: true, message: "RAG 檔案已成功刪除" };
+      } else {
+        console.error(`❌ Failed to delete RAG file:`, response.data);
+        return { success: false, error: "無法刪除 RAG 檔案" };
+      }
+    } catch (error) {
+      console.error(`❌ Error deleting RAG file:`, error);
       return {
         success: false,
-        error: error.message,
+        error:
+          error.response?.data?.error?.message || "刪除 RAG 檔案時發生錯誤",
       };
     }
   }
+
   async uploadToUserRAG(
     userId,
     file,
