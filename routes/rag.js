@@ -143,51 +143,6 @@ router.post(
   }
 );
 
-// 📋 獲取用戶 RAG Engines 列表
-// router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
-//   try {
-//     const requestingUserId = req.user.userId;
-//     const targetUserId = req.params.userId;
-
-//     // 確保用戶只能訪問自己的 engines
-//     if (requestingUserId !== targetUserId) {
-//       return res.status(403).json({
-//         success: false,
-//         error: "您只能訪問自己的 RAG Engines",
-//       });
-//     }
-
-//     console.log(`📋 Getting RAG engines for user: ${targetUserId}`);
-
-//     const engines = await ragSystem.getUserRAGEngines(targetUserId);
-
-//     // 格式化 engines 數據以符合測試期望
-//     const formattedEngines = engines.map((engine) => ({
-//       id: engine.ragid,
-//       name: engine.ragname,
-//       displayName: engine.ragname,
-//       ragName: engine.ragname,
-//       visibility: engine.visibility,
-//       createdAt: engine.created_at,
-//       updatedAt: engine.updated_at,
-//     }));
-
-//     res.json({
-//       success: true,
-//       engines: formattedEngines,
-//       totalEngines: formattedEngines.length,
-//       userId: targetUserId,
-//       timestamp: new Date().toISOString(),
-//     });
-//   } catch (error) {
-//     console.error("Get user engines error:", error);
-//     res.status(500).json({
-//       success: false,
-//       error: "Failed to get user engines",
-//     });
-//   }
-// });
-
 router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
   try {
     const requestingUserId = req.user.userId;
@@ -750,9 +705,6 @@ router.delete(
     }
   }
 );
-
-// 設定 multer 將檔案暫存在記憶體中，它會提供一個 buffer
-const upload = multer({ storage: multer.memoryStorage() });
 
 // 假設你的上傳 API 是這樣的
 // 1. 使用 authenticateToken 驗證
