@@ -523,7 +523,50 @@ class FileOperations {
     }
   }
 
-  // 🗑️ 刪除 Google Cloud RAG 檔案
+  // 🔧 新增：直接刪除文檔的方法（跳過權限檢查）
+  async deleteUserDocumentDirect(userId, ragFileId, ragId) {
+    try {
+      console.log(
+        `🗑️ Direct delete: User ${userId}, File ${ragFileId}, RAG ${ragId}`
+      );
+
+      // 1. 構建 corpus 名稱
+      const corpusName = `projects/${this.projectId}/locations/${this.location}/ragCorpora/${ragId}`;
+
+      // 2. 先從 Google Cloud RAG 刪除檔案
+      const ragDeleteResult = await this.deleteRAGFile(corpusName, ragFileId);
+      if (!ragDeleteResult.success) {
+        console.warn(
+          `⚠️ Failed to delete from RAG, but continuing with DB cleanup:`,
+          ragDeleteResult.error
+        );
+      }
+
+      // 3. 從資料庫刪除記錄
+      const query = `DELETE FROM rag_file_name WHERE fileid = ? AND ragid = ?`;
+      const [dbResult] = await this.db.execute(query, [ragFileId, ragId]);
+
+      console.log(
+        `🔍 DB delete result - affected rows: ${dbResult.affectedRows}`
+      );
+
+      if (dbResult.affectedRows > 0) {
+        return {
+          success: true,
+          message: "檔案已成功刪除",
+          ragDeleted: ragDeleteResult.success,
+          dbDeleted: true,
+        };
+      } else {
+        return { success: false, error: "資料庫中找不到該檔案記錄" };
+      }
+    } catch (error) {
+      console.error("Direct delete user document error:", error);
+      return { success: false, error: "刪除檔案時發生錯誤: " + error.message };
+    }
+  }
+
+  // 🗑️ 刪除 Google Cloud RAG 檔案的方法（如果還沒有的話）
   async deleteRAGFile(corpusName, ragFileId) {
     try {
       const accessToken = await this.auth.getAccessToken();
@@ -551,6 +594,13 @@ class FileOperations {
       }
     } catch (error) {
       console.error(`❌ Error deleting RAG file:`, error);
+      if (error.response?.status === 404) {
+        // 檔案不存在，視為成功
+        console.log(
+          `📋 RAG file ${ragFileId} not found, treating as already deleted`
+        );
+        return { success: true, message: "RAG 檔案不存在（可能已被刪除）" };
+      }
       return {
         success: false,
         error:
