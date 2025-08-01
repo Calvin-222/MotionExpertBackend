@@ -336,6 +336,8 @@ router.delete(
       const userId = req.user.userId;
 
       console.log(`🗑️ User ${userId} deleting document: ${fileId}`);
+      console.log(`🔍 RAG ID: ${ragId}`);
+      console.log(`🔍 File ID: ${fileId}`);
 
       if (!ragId) {
         return res.status(400).json({
@@ -344,19 +346,57 @@ router.delete(
         });
       }
 
-      // 🔧 修正：傳遞 canUserAccessRAG 函數
-      const fileOps = new (require("./rag/fileOperations"))();
-      const result = await fileOps.deleteUserDocument(
+      // 🔧 修正：使用更可靠的權限檢查
+      console.log(`🔍 Checking access for user ${userId} to RAG ${ragId}`);
+
+      try {
+        const userEnginesResult = await ragSystem.getAllUserEngines(userId);
+        if (!userEnginesResult.success) {
+          console.log(
+            `❌ Failed to get user engines: ${userEnginesResult.error}`
+          );
+          return res.status(500).json({
+            success: false,
+            error: "無法獲取用戶引擎列表",
+          });
+        }
+
+        const userEngineIds = userEnginesResult.engines.map((e) => e.ragid);
+        const hasAccess = userEngineIds.includes(ragId);
+
+        console.log(`🔍 User's engines:`, userEngineIds);
+        console.log(`🔍 Access check result: ${hasAccess}`);
+
+        if (!hasAccess) {
+          console.log(`❌ Access denied for user ${userId} to RAG ${ragId}`);
+          return res.status(403).json({
+            success: false,
+            error: "沒有權限刪除此檔案",
+          });
+        }
+      } catch (enginesError) {
+        console.log(`⚠️ Error checking user engines:`, enginesError.message);
+        return res.status(500).json({
+          success: false,
+          error: "權限檢查失敗",
+        });
+      }
+
+      // 🔧 修正：直接呼叫 fileOperations 的刪除方法
+      const FileOperations = require("./rag/fileOperations");
+      const fileOps = new FileOperations();
+
+      // 🔧 簡化：跳過額外的權限檢查，因為我們已經在上面檢查過了
+      const result = await fileOps.deleteUserDocumentDirect(
         userId,
         fileId,
-        ragId,
-        ragSystem.canUserAccessRAG.bind(ragSystem) // 傳遞權限檢查函數
+        ragId
       );
 
       if (result.success) {
         res.json({
           success: true,
-          message: result.message,
+          message: result.message || "檔案已成功刪除",
           fileId: fileId,
           ragId: ragId,
           details: {
@@ -365,7 +405,6 @@ router.delete(
           },
         });
       } else {
-        // 🔧 修正：安全的錯誤檢查
         const errorMessage = result.error || "Failed to delete document";
         const statusCode =
           typeof errorMessage === "string" && errorMessage.includes("權限")

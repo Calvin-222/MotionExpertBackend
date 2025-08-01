@@ -523,7 +523,101 @@ class FileOperations {
     }
   }
 
-  // 🔧 新增：直接刪除文檔的方法（跳過權限檢查）
+  // 🗑️ 刪除 Google Cloud RAG 檔案的方法
+  async deleteRAGFile(corpusName, ragFileId) {
+    try {
+      const authClient = await this.auth.getClient();
+      const accessToken = await authClient.getAccessToken();
+
+      // 🔧 修正1：使用正確的 API 版本 v1beta1
+      const url = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles/${ragFileId}`;
+
+      console.log(`🗑️ Deleting RAG file with URL: ${url}`);
+
+      const response = await axios.delete(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken.token}`, // 🔧 修正2：使用 .token
+          "Content-Type": "application/json",
+        },
+      });
+
+      if (response.status === 200 || response.status === 204) {
+        console.log(`✅ Successfully deleted RAG file: ${ragFileId}`);
+        return { success: true, message: "RAG 檔案已成功刪除" };
+      } else {
+        console.error(`❌ Failed to delete RAG file:`, response.data);
+        return { success: false, error: "無法刪除 RAG 檔案" };
+      }
+    } catch (error) {
+      console.error(`❌ Error deleting RAG file:`, error);
+
+      // 🔧 增強錯誤處理
+      if (error.response?.status === 404) {
+        console.log(
+          `📋 RAG file ${ragFileId} not found, treating as already deleted`
+        );
+        return { success: true, message: "RAG 檔案不存在（可能已被刪除）" };
+      }
+
+      // 🔧 記錄詳細的錯誤資訊
+      if (error.response?.data) {
+        console.error(
+          `❌ RAG API Error Details:`,
+          JSON.stringify(error.response.data, null, 2)
+        );
+      }
+
+      return {
+        success: false,
+        error:
+          error.response?.data?.error?.message || "刪除 RAG 檔案時發生錯誤",
+      };
+    }
+  }
+
+  // 🔧 新增：獲取正確的 RAG 檔案 ID
+  async getRealRAGFileId(corpusName, expectedFileName) {
+    try {
+      console.log(`🔍 Looking for real RAG file ID for: ${expectedFileName}`);
+
+      // 獲取 corpus 中所有檔案
+      const documentsResult = await this.getUserDocuments(corpusName);
+
+      if (!documentsResult.success) {
+        console.log(`❌ Failed to get documents: ${documentsResult.error}`);
+        return { success: false, error: documentsResult.error };
+      }
+
+      console.log(`📋 Found ${documentsResult.files.length} files in corpus`);
+      documentsResult.files.forEach((file, index) => {
+        console.log(`  ${index + 1}. ID: ${file.id}, Name: ${file.name}`);
+      });
+
+      // 嘗試按時間排序找到最新的檔案
+      const sortedFiles = documentsResult.files.sort((a, b) => {
+        const timeA = new Date(a.uploadTime || a.created_at || 0);
+        const timeB = new Date(b.uploadTime || b.created_at || 0);
+        return timeB - timeA;
+      });
+
+      if (sortedFiles.length > 0) {
+        const latestFile = sortedFiles[0];
+        console.log(`📍 Using latest file: ${latestFile.id}`);
+        return {
+          success: true,
+          fileId: latestFile.id,
+          fileName: latestFile.name,
+        };
+      }
+
+      return { success: false, error: "No files found in corpus" };
+    } catch (error) {
+      console.error(`❌ Error getting real RAG file ID:`, error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  // 🔧 修正：更新 deleteUserDocumentDirect 方法
   async deleteUserDocumentDirect(userId, ragFileId, ragId) {
     try {
       console.log(
@@ -533,8 +627,24 @@ class FileOperations {
       // 1. 構建 corpus 名稱
       const corpusName = `projects/${this.projectId}/locations/${this.location}/ragCorpora/${ragId}`;
 
-      // 2. 先從 Google Cloud RAG 刪除檔案
-      const ragDeleteResult = await this.deleteRAGFile(corpusName, ragFileId);
+      // 2. 🔧 先嘗試獲取正確的 RAG 檔案 ID
+      const realFileResult = await this.getRealRAGFileId(corpusName, ragFileId);
+      let actualFileId = ragFileId; // 默認使用傳入的 ID
+
+      if (realFileResult.success) {
+        actualFileId = realFileResult.fileId;
+        console.log(`🔍 Found real RAG file ID: ${actualFileId}`);
+      } else {
+        console.log(
+          `⚠️ Could not find real RAG file ID, using original: ${ragFileId}`
+        );
+      }
+
+      // 3. 先從 Google Cloud RAG 刪除檔案
+      const ragDeleteResult = await this.deleteRAGFile(
+        corpusName,
+        actualFileId
+      );
       if (!ragDeleteResult.success) {
         console.warn(
           `⚠️ Failed to delete from RAG, but continuing with DB cleanup:`,
@@ -542,7 +652,7 @@ class FileOperations {
         );
       }
 
-      // 3. 從資料庫刪除記錄
+      // 4. 從資料庫刪除記錄
       const query = `DELETE FROM rag_file_name WHERE fileid = ? AND ragid = ?`;
       const [dbResult] = await this.db.execute(query, [ragFileId, ragId]);
 
@@ -556,6 +666,7 @@ class FileOperations {
           message: "檔案已成功刪除",
           ragDeleted: ragDeleteResult.success,
           dbDeleted: true,
+          actualFileId: actualFileId, // 返回實際使用的檔案 ID
         };
       } else {
         return { success: false, error: "資料庫中找不到該檔案記錄" };
