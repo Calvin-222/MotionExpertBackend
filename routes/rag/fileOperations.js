@@ -882,7 +882,7 @@ class FileOperations {
       );
       const completionResult = await this.waitForImportCompletion(
         importResult.operationName,
-        120000
+        300000 // 5 分鐘超時
       );
 
       // 3. 檢查操作的最終結果
@@ -1172,7 +1172,7 @@ class FileOperations {
             // 等待導入完成
             const completionResult = await this.waitForImportCompletion(
               importResult.operationName,
-              60000 // 1分鐘超時
+              300000 // 5分鐘超時
             );
 
             if (completionResult.success) {
@@ -1267,7 +1267,7 @@ class FileOperations {
   }
 
   // 🔍 等待導入操作完成並獲取文件ID
-  async waitForImportCompletion(operationName, maxWaitTime = 180000) {
+  async waitForImportCompletion(operationName, maxWaitTime = 300000) {
     try {
       const startTime = Date.now();
       console.log(
