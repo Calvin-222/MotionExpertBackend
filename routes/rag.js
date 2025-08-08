@@ -87,8 +87,12 @@ router.patch(
       const { engineId } = req.params;
       const { visibility } = req.body;
       const userId = req.user.userId;
-     
-      const result = await ragSystem.updateEngineVisibility(userId, engineId, visibility);
+
+      const result = await ragSystem.updateEngineVisibility(
+        userId,
+        engineId,
+        visibility
+      );
 
       if (result.success) {
         res.json(result);
@@ -96,10 +100,10 @@ router.patch(
         res.status(400).json(result);
       }
     } catch (error) {
-      console.error('Error updating engine visibility:', error);
-      res.status(500).json({ 
-        success: false, 
-        error: 'Internal server error' 
+      console.error("Error updating engine visibility:", error);
+      res.status(500).json({
+        success: false,
+        error: "Internal server error",
       });
     }
   }
@@ -139,51 +143,6 @@ router.post(
   }
 );
 
-// 📋 獲取用戶 RAG Engines 列表
-// router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
-//   try {
-//     const requestingUserId = req.user.userId;
-//     const targetUserId = req.params.userId;
-
-//     // 確保用戶只能訪問自己的 engines
-//     if (requestingUserId !== targetUserId) {
-//       return res.status(403).json({
-//         success: false,
-//         error: "您只能訪問自己的 RAG Engines",
-//       });
-//     }
-
-//     console.log(`📋 Getting RAG engines for user: ${targetUserId}`);
-
-//     const engines = await ragSystem.getUserRAGEngines(targetUserId);
-
-//     // 格式化 engines 數據以符合測試期望
-//     const formattedEngines = engines.map((engine) => ({
-//       id: engine.ragid,
-//       name: engine.ragname,
-//       displayName: engine.ragname,
-//       ragName: engine.ragname,
-//       visibility: engine.visibility,
-//       createdAt: engine.created_at,
-//       updatedAt: engine.updated_at,
-//     }));
-
-//     res.json({
-//       success: true,
-//       engines: formattedEngines,
-//       totalEngines: formattedEngines.length,
-//       userId: targetUserId,
-//       timestamp: new Date().toISOString(),
-//     });
-//   } catch (error) {
-//     console.error("Get user engines error:", error);
-//     res.status(500).json({
-//       success: false,
-//       error: "Failed to get user engines",
-//     });
-//   }
-// });
-
 router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
   try {
     const requestingUserId = req.user.userId;
@@ -197,7 +156,7 @@ router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
     }
 
     const result = await ragSystem.getAllUserEngines(targetUserId);
-    
+
     if (!result.success) {
       return res.status(500).json({
         success: false,
@@ -267,17 +226,17 @@ router.post(
         `📤 User ${targetUserId} uploading file: ${file.originalname} to engine: ${ragId}`
       );
 
-      // 🔧 修正：確保正確傳遞文件數據
+      // 🔧 修正：直接傳遞原始 Buffer，避免破壞二進位檔案
       const fileData = {
         name: file.originalname,
-        content: file.buffer.toString("utf-8"), // 將 Buffer 轉換為字串
-        buffer: file.buffer, // 同時保留原始 Buffer
+        // 移除 content: file.buffer.toString("utf-8") 這一行，這是造成 PDF 損毀的主因
+        buffer: file.buffer, // 只保留原始 Buffer
       };
 
       // 復用現有的上傳邏輯
       const result = await ragSystem.uploadToUserRAG(
         targetUserId,
-        fileData, // 傳遞包含多種格式的文件數據
+        fileData, // 現在 fileData 只包含 buffer，下游函數會正確處理
         file.originalname,
         ragId
       );
@@ -377,6 +336,8 @@ router.delete(
       const userId = req.user.userId;
 
       console.log(`🗑️ User ${userId} deleting document: ${fileId}`);
+      console.log(`🔍 RAG ID: ${ragId}`);
+      console.log(`🔍 File ID: ${fileId}`);
 
       if (!ragId) {
         return res.status(400).json({
@@ -385,17 +346,65 @@ router.delete(
         });
       }
 
-      const result = await ragSystem.deleteUserDocument(userId, fileId, ragId);
+      // 🔧 修正：使用更可靠的權限檢查
+      console.log(`🔍 Checking access for user ${userId} to RAG ${ragId}`);
+
+      try {
+        const userEnginesResult = await ragSystem.getAllUserEngines(userId);
+        if (!userEnginesResult.success) {
+          console.log(
+            `❌ Failed to get user engines: ${userEnginesResult.error}`
+          );
+          return res.status(500).json({
+            success: false,
+            error: "無法獲取用戶引擎列表",
+          });
+        }
+
+        const userEngineIds = userEnginesResult.engines.map((e) => e.ragid);
+        const hasAccess = userEngineIds.includes(ragId);
+
+        console.log(`🔍 User's engines:`, userEngineIds);
+        console.log(`🔍 Access check result: ${hasAccess}`);
+
+        if (!hasAccess) {
+          console.log(`❌ Access denied for user ${userId} to RAG ${ragId}`);
+          return res.status(403).json({
+            success: false,
+            error: "沒有權限刪除此檔案",
+          });
+        }
+      } catch (enginesError) {
+        console.log(`⚠️ Error checking user engines:`, enginesError.message);
+        return res.status(500).json({
+          success: false,
+          error: "權限檢查失敗",
+        });
+      }
+
+      // 🔧 修正：直接呼叫 fileOperations 的刪除方法
+      const FileOperations = require("./rag/fileOperations");
+      const fileOps = new FileOperations();
+
+      // 🔧 簡化：跳過額外的權限檢查，因為我們已經在上面檢查過了
+      const result = await fileOps.deleteUserDocumentDirect(
+        userId,
+        fileId,
+        ragId
+      );
 
       if (result.success) {
         res.json({
           success: true,
-          message: result.message,
+          message: result.message || "檔案已成功刪除",
           fileId: fileId,
           ragId: ragId,
+          details: {
+            ragDeleted: result.ragDeleted,
+            dbDeleted: result.dbDeleted,
+          },
         });
       } else {
-        // 🔧 修正：安全的錯誤檢查
         const errorMessage = result.error || "Failed to delete document";
         const statusCode =
           typeof errorMessage === "string" && errorMessage.includes("權限")
@@ -416,8 +425,6 @@ router.delete(
     }
   }
 );
-
-
 
 // 🔗 獲取可訪問的 RAG Engines
 router.get("/users/accessible-engines", authenticateToken, async (req, res) => {
@@ -634,7 +641,6 @@ router.get("/engines/overview", async (req, res) => {
   }
 });
 
-
 // 📥 文件導入端點 (支援 JSON 格式)
 router.post(
   "/users/:userId/engines/:engineId/import",
@@ -694,7 +700,6 @@ router.post(
   }
 );
 
-
 // 🗑️ 刪除 RAG Engine 端點
 router.delete(
   "/users/:userId/engines/:engineId",
@@ -747,6 +752,51 @@ router.delete(
         success: false,
         error: "Failed to delete RAG engine",
       });
+    }
+  }
+);
+
+// 假設你的上傳 API 是這樣的
+// 1. 使用 authenticateToken 驗證
+// 2. 使用 multer 中介軟體 `upload.single('file')` 來處理檔案
+//    'file' 必須與你前端 <input type="file" name="file"> 的 name 屬性一致
+router.post(
+  "/engines/:engineId/upload",
+  authenticateToken,
+  upload.single("file"), // <-- 關鍵在這裡
+  async (req, res) => {
+    try {
+      // multer 處理後，檔案資訊會在 req.file
+      if (!req.file) {
+        return res
+          .status(400)
+          .json({ success: false, message: "沒有上傳檔案" });
+      }
+
+      const { engineId } = req.params;
+      const userId = req.user.userId;
+
+      // 從 req.file 中取得檔名和 Buffer
+      const fileName = req.file.originalname;
+      const fileBuffer = req.file.buffer; // <-- 這就是正確的二進位 Buffer
+
+      // 現在，用這個正確的 buffer 去呼叫你現有的邏輯
+      const result = await ragSystem.fileOps.uploadToUserRAG(
+        userId,
+        { buffer: fileBuffer }, // 確保傳遞的是 buffer
+        fileName,
+        engineId
+        // ... 傳入其他需要的參數
+      );
+
+      if (result.success) {
+        res.json(result);
+      } else {
+        res.status(500).json(result);
+      }
+    } catch (error) {
+      console.error("檔案上傳路由出錯:", error);
+      res.status(500).json({ success: false, message: "伺服器內部錯誤" });
     }
   }
 );

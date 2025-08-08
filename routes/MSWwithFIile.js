@@ -1,13 +1,14 @@
 const express = require("express");
 const router = express.Router();
 const { authenticateToken } = require("./middlewarecheck/middleware");
+const { pool } = require("../config/database");
 const MultiUserRAGSystem = require("./rag/MultiUserRAGSystem");
 const ragSystem = new MultiUserRAGSystem();
 
 // 主要 router：直接用 RAG Engine 回答
 router.post("/askai", authenticateToken, async (req, res) => {
   try {
-    const { synopsisString, engineId } = req.body;
+    const { synopsisString, engineId, templateId } = req.body; // 新增 templateId 參數
     const userId = req.user.userId;
 
     if (!synopsisString || !engineId) {
@@ -17,8 +18,88 @@ router.post("/askai", authenticateToken, async (req, res) => {
       });
     }
 
-    // 建構給 AI 的提示詞
-    const aiPrompt = `請基於以下劇情概要結構，生成一個專業的詳細的電影劇本（Movie Script）。請確保劇本格式正確，包含場景描述、角色對話、動作指示等專業電影劇本元素：\n\n${synopsisString}\n\n請生成一個完整的電影劇本，包含：\n1. 正確的劇本格式（場景標題、角色名稱、對話、動作描述）\n2. 詳細的場景描述和角色動作\n3. 自然流暢的角色對話\n4. 適當的場景轉換\n5. 專業的劇本結構\n\n劇本應該適合拍攝製作使用。除了使用RAG Engine裡面的文件內容，你可以使用你的知識和經驗來生成劇本。請確保劇本符合專業標準，並遵循電影劇本的格式，並包含場景描述、角色對話、動作指示等專業電影劇本元素，劇本應該足夠長，每一個片段（SCENE）都不能太短。`;
+    console.log(`[DEBUG] Processing synopsis request:`, {
+      userId,
+      engineId,
+      templateId: templateId || "none",
+      synopsisLength: synopsisString.length,
+    });
+
+    // 如果提供了 templateId，記錄模板使用情況並獲取模板詳情
+    let templateInfo = null;
+    if (templateId) {
+      try {
+        // 更新模板的最後使用時間
+        await pool.execute(
+          "UPDATE script_template SET updated_at = CURRENT_TIMESTAMP WHERE id = ? AND userid = ?",
+          [templateId, userId]
+        );
+
+        // 獲取模板詳情以加強提示詞
+        const [templates] = await pool.execute(
+          "SELECT scriptname, template_structure FROM script_template WHERE id = ? AND userid = ?",
+          [templateId, userId]
+        );
+
+        if (templates.length > 0) {
+          templateInfo = {
+            name: templates[0].scriptname,
+            structure: JSON.parse(templates[0].template_structure),
+          };
+          console.log(`[DEBUG] Using template: ${templateInfo.name}`);
+        }
+      } catch (error) {
+        console.error("[DEBUG] Error handling template:", error);
+        // 不影響主要功能，繼續執行
+      }
+    }
+
+    // 建構給 AI 的提示詞（根據是否有模板資訊來調整）
+    let aiPrompt;
+
+    if (templateInfo) {
+      // 使用模板資訊來增強提示詞
+      aiPrompt = `請基於以下使用「${
+        templateInfo.name
+      }」模板結構創建的劇情概要，生成一個專業的詳細的電影劇本（Movie Script）。
+
+模板結構包含以下章節：
+${templateInfo.structure.sections
+  .map(
+    (section) =>
+      `- ${section.title}: ${section.fields
+        .map((field) => field.label)
+        .join(", ")}`
+  )
+  .join("\n")}
+
+劇情概要：
+${synopsisString}
+
+請生成一個完整的電影劇本，確保：
+1. 正確的劇本格式（場景標題、角色名稱、對話、動作描述）
+2. 詳細的場景描述和角色動作
+3. 自然流暢的角色對話
+4. 適當的場景轉換
+5. 專業的劇本結構
+6. 根據模板結構來組織劇本的節奏和發展
+
+劇本應該適合拍攝製作使用。除了使用RAG Engine裡面的文件內容，你可以使用你的知識和經驗來生成劇本。請確保劇本符合專業標準，並遵循電影劇本的格式，並包含場景描述、角色對話、動作指示等專業電影劇本元素，劇本應該足夠長，每一個片段（SCENE）都不能太短。`;
+    } else {
+      // 原來的提示詞
+      aiPrompt = `請基於以下劇情概要結構，生成一個專業的詳細的電影劇本（Movie Script）。請確保劇本格式正確，包含場景描述、角色對話、動作指示等專業電影劇本元素：
+
+${synopsisString}
+
+請生成一個完整的電影劇本，包含：
+1. 正確的劇本格式（場景標題、角色名稱、對話、動作描述）
+2. 詳細的場景描述和角色動作
+3. 自然流暢的角色對話
+4. 適當的場景轉換
+5. 專業的劇本結構
+
+劇本應該適合拍攝製作使用。除了使用RAG Engine裡面的文件內容，你可以使用你的知識和經驗來生成劇本。請確保劇本符合專業標準，並遵循電影劇本的格式，並包含場景描述、角色對話、動作指示等專業電影劇本元素，劇本應該足夠長，每一個片段（SCENE）都不能太短。`;
+    }
 
     // 用包裝後的 prompt 送給 RAG query function
     const result = await ragSystem.queryUserRAG(userId, aiPrompt, engineId);
@@ -29,6 +110,8 @@ router.post("/askai", authenticateToken, async (req, res) => {
         message: "AI 回答成功",
         aiProcessedOutput: result.answer || result.data || result.response,
         originalInput: synopsisString,
+        templateUsed: templateInfo?.name || null,
+        engineId: engineId,
       });
     } else {
       res.status(500).json({

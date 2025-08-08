@@ -272,7 +272,7 @@ class QueryOperations {
       } else {
         return {
           success: true,
-          answer: "Sorry, did not find relevant information in your documents.",
+          answer: "抱歉，在您的文檔中沒有找到相關信息。",
           sources: { contexts: [] },
           rawResponse: response.data,
         };
@@ -306,14 +306,14 @@ class QueryOperations {
       console.log(`📝 Context texts:`, contextTexts.substring(0, 500) + '...');
 
       // 構建提示詞
-      const prompt = `基於以下文檔內容回答問題。請只使用提供的文檔內容來回答，如果文檔中沒有相關信息，請明確說明 
+      const prompt = `基於以下文檔內容回答問題。請只使用提供的文檔內容來回答，如果文檔中沒有相關信息，請明確說明。
 
-File record:
+文檔內容:
 ${contextTexts}
 
 問題: ${question}
 
-Please use english to answer，並基於文檔內容提供具體和有用的答案:`;
+請用繁體中文回答，並基於文檔內容提供具體和有用的答案:`;
 
       console.log(`🚀 Calling Google GenAI SDK with Gemini model...`);
 
