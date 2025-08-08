@@ -845,8 +845,13 @@ class EngineManagement {
       const targetUserId = userRows[0].userid;
       console.log(`✅ Target User ID: ${targetUserId}`);
 
-      // 🚫 完全移除好友验证 - 可以分享给任何用户
-      console.log(`✅ === 跳过好友验证，可分享给任何注册用户 ===`);
+      if (ownerId === targetUserId) {
+        console.log(`❌ Self-sharing blocked: Owner ${ownerId} tried to share to themselves`);
+        return { success: false, error: "不能分享給自己" };
+      }
+
+      // 🚫 完全移除好友验证 - 可以分享给任何用户（除了自己）
+      console.log(`✅ === 跳过好友验证，可分享给任何注册用户（除自己外） ===`);
 
       // 檢查是否已經分享過
       const [existing] = await this.db.execute(
