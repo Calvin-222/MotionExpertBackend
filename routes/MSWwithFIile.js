@@ -59,11 +59,7 @@ router.post("/askai", authenticateToken, async (req, res) => {
 
     if (templateInfo) {
       // 使用模板資訊來增強提示詞
-      aiPrompt = `請基於以下使用「${
-        templateInfo.name
-      }」模板結構創建的劇情概要，生成一個專業的詳細的電影劇本（Movie Script）。
-
-模板結構包含以下章節：
+      aiPrompt = `Please use the following template to create a advertisment script and reply in tradtional chinese. The template structure includes the following sections:
 ${templateInfo.structure.sections
   .map(
     (section) =>
@@ -73,18 +69,21 @@ ${templateInfo.structure.sections
   )
   .join("\n")}
 
-劇情概要：
+The script will use the following information:
 ${synopsisString}
 
 請生成一個完整的電影劇本，確保：
-1. 正確的劇本格式（場景標題、角色名稱、對話、動作描述）
-2. 詳細的場景描述和角色動作
-3. 自然流暢的角色對話
-4. 適當的場景轉換
-5. 專業的劇本結構
-6. 根據模板結構來組織劇本的節奏和發展
+Plase make a complete advertisment script, ensure:
+1. the correct script format (scene headings, character names, dialogue, action descriptions)
+2. detailed scene descriptions and character actions
+3. natural and fluent character dialogue 
+4. appropriate scene transitions
+5. professional script structure  
+6. organize the script rhythm and development according to the template structure
+7. pay attention to the time, Do not exceed the requested time limit
+8. As this is a advertisment script, it should be concise and impactful, focusing on the key message.
 
-劇本應該適合拍攝製作使用。除了使用RAG Engine裡面的文件內容，你可以使用你的知識和經驗來生成劇本。請確保劇本符合專業標準，並遵循電影劇本的格式，並包含場景描述、角色對話、動作指示等專業電影劇本元素，劇本應該足夠長，每一個片段（SCENE）都不能太短。`;
+This should be a shooting script. Aside from using the docuements in the RAG Engine, you chould use your own knowledge and experience to generate the script.There is no limit to how long each scene is, do as you please.`;
     } else {
       // 原來的提示詞
       aiPrompt = `請基於以下劇情概要結構，生成一個專業的詳細的電影劇本（Movie Script）。請確保劇本格式正確，包含場景描述、角色對話、動作指示等專業電影劇本元素：
