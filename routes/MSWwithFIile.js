@@ -59,7 +59,9 @@ router.post("/askai", authenticateToken, async (req, res) => {
 
     if (templateInfo) {
       // 使用模板資訊來增強提示詞
-      aiPrompt = `Please use the following template to create a advertisment script and reply in tradtional chinese. The template structure includes the following sections:
+      aiPrompt = `Please use the following template 「${
+        templateInfo.name
+      }」to create a advertisment script and reply in tradtional chinese. The template structure includes the following sections:
 ${templateInfo.structure.sections
   .map(
     (section) =>
@@ -72,7 +74,6 @@ ${templateInfo.structure.sections
 The script will use the following information:
 ${synopsisString}
 
-請生成一個完整的電影劇本，確保：
 Plase make a complete advertisment script, ensure:
 1. the correct script format (scene headings, character names, dialogue, action descriptions)
 2. detailed scene descriptions and character actions
