@@ -29,11 +29,7 @@ router.post("/askai", authenticateToken, async (req, res) => {
     let templateInfo = null;
     if (templateId) {
       try {
-        // 更新模板的最後使用時間
-        await pool.execute(
-          "UPDATE script_template SET updated_at = CURRENT_TIMESTAMP WHERE id = ? AND userid = ?",
-          [templateId, userId]
-        );
+        console.log(`[DEBUG] Processing templateId: ${templateId}`);
 
         // 獲取模板詳情以加強提示詞
         const [templates] = await pool.execute(
@@ -41,23 +37,92 @@ router.post("/askai", authenticateToken, async (req, res) => {
           [templateId, userId]
         );
 
+        console.log(
+          `[DEBUG] Found ${templates.length} template(s) for templateId: ${templateId}`
+        );
+
         if (templates.length > 0) {
-          templateInfo = {
-            name: templates[0].scriptname,
-            structure: JSON.parse(templates[0].template_structure),
-          };
-          console.log(`[DEBUG] Using template: ${templateInfo.name}`);
+          try {
+            const rawTemplateStructure = templates[0].template_structure;
+            console.log(
+              `[DEBUG] Raw template_structure type:`,
+              typeof rawTemplateStructure
+            );
+
+            // 根據資料類型決定處理方式
+            let templateStructure;
+
+            if (
+              typeof rawTemplateStructure === "object" &&
+              rawTemplateStructure !== null
+            ) {
+              // 如果已經是物件，直接使用
+              console.log(`[DEBUG] Template structure is already an object`);
+              templateStructure = rawTemplateStructure;
+            } else if (typeof rawTemplateStructure === "string") {
+              console.log(
+                `[DEBUG] Raw template_structure preview:`,
+                rawTemplateStructure.substring(0, 100) + "..."
+              );
+
+              // 檢查是否為 "[object Object]" 字串
+              if (rawTemplateStructure === "[object Object]") {
+                console.error(
+                  "[DEBUG] Invalid template structure: [object Object] detected"
+                );
+                console.error(
+                  "[DEBUG] This suggests the template was not properly JSON.stringify() when saved"
+                );
+                throw new Error("Invalid template structure");
+              } else {
+                // 嘗試解析 JSON 字串
+                templateStructure = JSON.parse(rawTemplateStructure);
+              }
+            } else {
+              throw new Error("Unknown template structure format");
+            }
+
+            templateInfo = {
+              name: templates[0].scriptname,
+              structure: templateStructure,
+            };
+
+            // 更新模板的最後使用時間（只在成功找到模板後執行）
+            await pool.execute(
+              "UPDATE script_template SET updated_at = CURRENT_TIMESTAMP WHERE id = ? AND userid = ?",
+              [templateId, userId]
+            );
+
+            console.log(
+              `[DEBUG] Successfully loaded template: ${templateInfo.name}`
+            );
+          } catch (jsonError) {
+            console.error(
+              "[DEBUG] Error parsing template_structure JSON:",
+              jsonError
+            );
+            console.error(
+              "[DEBUG] Raw template_structure:",
+              templates[0].template_structure
+            );
+          }
+        } else {
+          console.warn(
+            `[DEBUG] No template found for templateId: ${templateId}, userId: ${userId}`
+          );
         }
       } catch (error) {
-        console.error("[DEBUG] Error handling template:", error);
+        console.error("[DEBUG] Database error while handling template:", error);
         // 不影響主要功能，繼續執行
       }
+    } else {
+      console.log(`[DEBUG] No templateId provided, using default prompt`);
     }
 
     // 建構給 AI 的提示詞（根據是否有模板資訊來調整）
     let aiPrompt;
 
-    if (templateInfo) {
+        if (templateInfo) {
       // 使用模板資訊來增強提示詞
       aiPrompt = `Please use the following template 「${
         templateInfo.name
