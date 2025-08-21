@@ -425,12 +425,14 @@ class FileOperations {
   // 📋 用戶所有文檔列表（支援多 Engine，前端與測試專用）
   async getUserDocuments(corpusName) {
     try {
+      console.log(`📋 Getting documents from corpus: ${corpusName}`);
+      
       const authClient = await this.auth.getClient();
       const accessToken = await authClient.getAccessToken();
 
       const filesUrl = `https://${this.location}-aiplatform.googleapis.com/v1beta1/${corpusName}/ragFiles`;
 
-      console.log(`Getting documents from: ${filesUrl}`);
+      console.log(`📤 Requesting documents from: ${filesUrl}`);
 
       const response = await axios.get(filesUrl, {
         headers: {
@@ -440,13 +442,19 @@ class FileOperations {
       });
 
       const files = response.data.ragFiles || [];
+      console.log(`📋 Raw files from Google Cloud: ${files.length} files`);
 
       // 獲取 ragId 以查詢文件名映射
       const ragId = corpusName.split("/").pop();
+      console.log(`📋 Extracted RAG ID: ${ragId}`);
+      
       const fileMapping = await this.getFileNameMapping(ragId);
+      console.log(`📋 File mapping result:`, fileMapping.success ? `${fileMapping.count} mappings` : fileMapping.error);
 
       const formattedFiles = files.map((file) => {
         const ragFileId = file.name ? file.name.split("/").pop() : "unknown";
+        console.log(`📄 Processing RAG file ID: ${ragFileId}`);
+        
         const mappingData = fileMapping.success
           ? fileMapping.mapping[ragFileId]
           : null;
@@ -454,14 +462,20 @@ class FileOperations {
         const originalName = mappingData ? mappingData.filename : ragFileId;
         const createdAt = mappingData ? mappingData.created_at : null;
 
+        console.log(`📄 File mapping: ${ragFileId} -> ${originalName} (${mappingData ? 'found' : 'not found'})`);
+
         return {
           id: ragFileId,
-          name: originalName,
+          name: originalName, // 這裡應該顯示中文檔名
+          displayName: originalName, // 添加顯示名稱
           uploadTime: file.uploadTime || null,
           created_at: createdAt,
+          hasMapping: !!mappingData, // 添加映射狀態標識
           ...file,
         };
       });
+
+      console.log(`✅ Formatted ${formattedFiles.length} files with name mapping`);
 
       return {
         success: true,
@@ -470,7 +484,7 @@ class FileOperations {
       };
     } catch (error) {
       console.error(
-        `Error getting documents from ${corpusName}:`,
+        `❌ Error getting documents from ${corpusName}:`,
         error.message
       );
       return {
@@ -834,10 +848,28 @@ class FileOperations {
 
       // --- [第三步：上傳檔案到 Google Cloud Storage] ---
       const userBucketPath = `user-data/${userId}/${newFileName}`;
+      
+      // 🔧 確保正確提取 Buffer 內容
+      let fileBuffer;
+      if (Buffer.isBuffer(file)) {
+        fileBuffer = file;
+      } else if (Buffer.isBuffer(file.buffer)) {
+        fileBuffer = file.buffer;
+      } else if (Buffer.isBuffer(file.content)) {
+        fileBuffer = file.content;
+      } else if (typeof file.content === 'string') {
+        fileBuffer = Buffer.from(file.content, 'utf-8');
+      } else {
+        console.error("❌ Unable to extract file buffer from:", typeof file);
+        return { success: false, error: "無法提取檔案內容" };
+      }
+      
+      console.log(`📤 Using file buffer type: ${fileBuffer.constructor.name}, size: ${fileBuffer.length} bytes`);
+      
       const uploadResult = await this.uploadFileToEngine(
         userEngine.fullName,
         userId,
-        file.content || file.buffer || file, // 確保傳遞正確的內容
+        fileBuffer, // 直接傳遞 Buffer
         newFileName
       );
 
@@ -943,6 +975,8 @@ class FileOperations {
 
   async getFileNameMapping(ragId) {
     try {
+      console.log(`📋 Getting file name mapping for RAG ID: ${ragId}`);
+      
       const query = `
       SELECT fileid, filename, id, created_at
       FROM rag_file_name 
@@ -950,6 +984,11 @@ class FileOperations {
       ORDER BY created_at DESC
     `;
       const [results] = await this.db.execute(query, [ragId]);
+
+      console.log(`📋 Found ${results.length} file records for RAG ${ragId}`);
+      results.forEach((row, index) => {
+        console.log(`  ${index + 1}. FileID: ${row.fileid}, FileName: ${row.filename}, Created: ${row.created_at}`);
+      });
 
       const mapping = {};
       results.forEach((row) => {
@@ -959,6 +998,8 @@ class FileOperations {
           created_at: row.created_at,
         };
       });
+
+      console.log(`📋 File mapping keys: ${Object.keys(mapping)}`);
 
       return {
         success: true,

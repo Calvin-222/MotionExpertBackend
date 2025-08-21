@@ -5,13 +5,32 @@ const multer = require("multer"); // 添加 multer 支援檔案上傳
 const fs = require("fs");
 const axios = require("axios"); // 添加 axios 支援診斷功能
 const { authenticateToken } = require("./middlewarecheck/middleware");
-// 🔧 設置 multer 用於檔案上傳
+// 🔧 設置 multer 用於檔案上傳，特別處理中文檔名
 const storage = multer.memoryStorage();
 const upload = multer({
   storage: storage,
   limits: {
-    fileSize: 100 * 1024 * 1024, // 10MB 限制
+    fileSize: 100 * 1024 * 1024, // 100MB 限制
   },
+  // 🔧 添加檔名處理選項
+  fileFilter: (req, file, cb) => {
+    console.log(`🔍 [MULTER] 接收檔案: ${file.originalname}`);
+    console.log(`🔍 [MULTER] 原始位元組:`, Buffer.from(file.originalname));
+    
+    // 修復中文檔名編碼問題
+    try {
+      // 將檔名從 latin1 轉換回正確的 UTF-8
+      const fixedFilename = Buffer.from(file.originalname, 'latin1').toString('utf8');
+      console.log(`✅ [MULTER] 修復後檔名: ${fixedFilename}`);
+      
+      // 覆蓋原始檔名
+      file.originalname = fixedFilename;
+    } catch (error) {
+      console.error(`❌ [MULTER] 檔名修復失敗:`, error.message);
+    }
+    
+    cb(null, true);
+  }
 });
 
 // 🔧 使用統一的 RAG 系統
@@ -193,6 +212,99 @@ router.get("/users/:userId/engines", authenticateToken, async (req, res) => {
   }
 });
 
+// 🧪 測試中文檔名上傳端點
+router.post(
+  "/test-chinese-upload",
+  authenticateToken,
+  upload.single("file"),
+  async (req, res) => {
+    try {
+      const file = req.file;
+      const userId = req.user.userId;
+
+      console.log(`\n🧪 === CHINESE FILENAME TEST ===`);
+      console.log(`👤 User ID: ${userId}`);
+      console.log(`📁 File details:`);
+      console.log(`  originalname: "${file.originalname}"`);
+      console.log(`  originalname type: ${typeof file.originalname}`);
+      console.log(`  originalname.length: ${file.originalname.length}`);
+      console.log(`  originalname bytes:`, [...Buffer.from(file.originalname)]);
+      console.log(`  originalname hex:`, Buffer.from(file.originalname).toString('hex'));
+      console.log(`  buffer size: ${file.buffer.length} bytes`);
+      console.log(`  mimetype: ${file.mimetype}`);
+      console.log(`  encoding: ${file.encoding}`);
+
+      // 測試不同的編碼解析
+      console.log(`\n🔍 Testing different encodings:`);
+      try {
+        const utf8Decoded = Buffer.from(file.originalname, 'utf8').toString('utf8');
+        console.log(`  UTF8 roundtrip: "${utf8Decoded}"`);
+        console.log(`  UTF8 match: ${utf8Decoded === file.originalname}`);
+      } catch (e) {
+        console.log(`  UTF8 test failed: ${e.message}`);
+      }
+
+      try {
+        const latin1ToUtf8 = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        console.log(`  Latin1->UTF8: "${latin1ToUtf8}"`);
+      } catch (e) {
+        console.log(`  Latin1->UTF8 test failed: ${e.message}`);
+      }
+
+      // 測試直接插入資料庫
+      console.log(`\n💾 Testing database insertion:`);
+      try {
+        const { pool } = require('../config/database');
+        
+        // 建立測試記錄
+        const testRagId = '9999999999999999999'; // 測試用
+        const [insertResult] = await pool.execute(
+          'INSERT INTO rag_file_name (ragid, filename) VALUES (?, ?) ON DUPLICATE KEY UPDATE filename = VALUES(filename)',
+          [testRagId, file.originalname]
+        );
+        
+        // 立即查詢
+        const [selectResult] = await pool.execute(
+          'SELECT filename FROM rag_file_name WHERE ragid = ? ORDER BY created_at DESC LIMIT 1',
+          [testRagId]
+        );
+        
+        if (selectResult.length > 0) {
+          const dbFilename = selectResult[0].filename;
+          console.log(`  DB storage: "${dbFilename}"`);
+          console.log(`  DB match: ${dbFilename === file.originalname}`);
+          
+          // 清理測試數據
+          await pool.execute('DELETE FROM rag_file_name WHERE ragid = ?', [testRagId]);
+        }
+      } catch (dbError) {
+        console.log(`  DB test failed: ${dbError.message}`);
+      }
+
+      res.json({
+        success: true,
+        originalFilename: file.originalname,
+        filenameBytes: [...Buffer.from(file.originalname)],
+        filenameHex: Buffer.from(file.originalname).toString('hex'),
+        bufferSize: file.buffer.length,
+        mimetype: file.mimetype,
+        encoding: file.encoding,
+        tests: {
+          utf8Roundtrip: Buffer.from(file.originalname, 'utf8').toString('utf8'),
+          latin1ToUtf8: Buffer.from(file.originalname, 'latin1').toString('utf8')
+        }
+      });
+
+    } catch (error) {
+      console.error('🧪 Test upload error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+    }
+  }
+);
+
 // 📤 用戶檔案上傳端點 (支援 FormData)
 router.post(
   "/users/:userId/upload",
@@ -225,18 +337,28 @@ router.post(
       console.log(
         `📤 User ${targetUserId} uploading file: ${file.originalname} to engine: ${ragId}`
       );
+      
+      // 🔍 詳細調試檔名編碼
+      console.log(`🔍 File details:`);
+      console.log(`  originalname: ${file.originalname}`);
+      console.log(`  originalname type: ${typeof file.originalname}`);
+      console.log(`  originalname bytes:`, Buffer.from(file.originalname, 'utf8'));
+      console.log(`  originalname length: ${file.originalname.length}`);
+      console.log(`  buffer size: ${file.buffer.length} bytes`);
+      console.log(`  mimetype: ${file.mimetype}`);
+      console.log(`  encoding: ${file.encoding}`);
 
       // 🔧 修正：直接傳遞原始 Buffer，避免破壞二進位檔案
       const fileData = {
         name: file.originalname,
-        // 移除 content: file.buffer.toString("utf-8") 這一行，這是造成 PDF 損毀的主因
-        buffer: file.buffer, // 只保留原始 Buffer
+        content: file.buffer, // 使用 content 欄位傳遞 Buffer
+        buffer: file.buffer, // 保留 buffer 欄位以保持相容性
       };
 
-      // 復用現有的上傳邏輯
+      // 復用現有的上傳邏輯，確保正確傳遞 Buffer
       const result = await ragSystem.uploadToUserRAG(
         targetUserId,
-        fileData, // 現在 fileData 只包含 buffer，下游函數會正確處理
+        fileData,
         file.originalname,
         ragId
       );
