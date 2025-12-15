@@ -36,7 +36,13 @@ class QueryOperations {
     return await apiCall();
   }
 
-  async queryUserRAG(userId, question, ragId = null, getRAGEngineFromDB) {
+  async queryUserRAG(
+    userId,
+    question,
+    ragId = null,
+    getRAGEngineFromDB,
+    model = null
+  ) {
     try {
       const targetRagId = ragId;
 
@@ -72,7 +78,8 @@ class QueryOperations {
         corpusName,
         question,
         userId,
-        engineResult.ragEngine.ragname
+        engineResult.ragEngine.ragname,
+        model
       );
 
       if (result.success) {
@@ -107,7 +114,7 @@ class QueryOperations {
   }
 
   // 💬 查詢特定 RAG Engine - 添加重試機制
-  async querySpecificRAG(corpusName, question, userId, fileName) {
+  async querySpecificRAG(corpusName, question, userId, fileName, model = null) {
     try {
       const authClient = await this.auth.getClient();
       const accessToken = await authClient.getAccessToken();
@@ -152,7 +159,8 @@ class QueryOperations {
             );
             const aiAnswer = await this.generateAnswerFromContexts(
               question,
-              contexts
+              contexts,
+              model
             );
 
             return {
@@ -301,12 +309,16 @@ class QueryOperations {
       };
     }
   }
-
   // 🤖 使用生成式 AI 基於檢索到的內容生成答案 (使用 Google GenAI SDK)
-  async generateAnswerFromContexts(question, contexts) {
+  async generateAnswerFromContexts(
+    question,
+    contexts,
+    model = "gemini-2.5-pro"
+  ) {
     try {
       console.log(`🤖 Generating answer for question: "${question}"`);
       console.log(`📚 Using ${contexts.length} context(s)`);
+      console.log(`🤖 Using model: ${model}`);
 
       // 構建上下文文本
       const contextTexts = contexts
@@ -333,7 +345,7 @@ ${contextTexts}
 
       // 使用 Google GenAI SDK 調用 Gemini 模型
       const request = {
-        model: "gemini-2.5-pro",
+        model: model,
         contents: [
           {
             role: "user",
@@ -388,7 +400,7 @@ ${contextTexts}
       return {
         success: true,
         answer: generatedText,
-        model: "gemini-2.5-pro",
+        model: model,
         contextUsed: contexts.length,
         rawResponse: result,
       };

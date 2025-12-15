@@ -21,6 +21,7 @@ var authRouter = require("./routes/auth");
 var friendsRouter = require("./routes/friends"); // ADD THIS LINE
 var templatesRouter = require("./routes/templates"); // ADD TEMPLATES ROUTER
 var translationRouter = require("./routes/translation"); // ADD TRANSLATION ROUTER
+var cloudRouter = require("./routes/cloud"); // ADD CLOUD ROUTER
 
 var app = express();
 
@@ -42,10 +43,12 @@ app.use(cors());
 app.use(express.static("public"));
 app.use("/", indexRouter);
 app.use("/api/users", require("./routes/users"));
+app.use("/api/friends", friendsRouter); // ADD FRIENDS ROUTE
 app.use("/api/rag", ragRouter);
 app.use("/api/auth", authRouter); //
-app.use("/api/friends", friendsRouter); // ADD THIS LINE
 app.use("/api/templates", templatesRouter); // ADD TEMPLATES ROUTE
+app.use("/api/translation", translationRouter); // ADD TRANSLATION ROUTE
+app.use("/api/cloud", cloudRouter); // ADD CLOUD ROUTE
 app.use("/api/translation", translationRouter); // ADD TRANSLATION ROUTE
 
 // catch 404 and forward to error handler
