@@ -179,7 +179,6 @@ ${synopsisString}
 **Your Task:**
 Analyze the provided source material and template framework. Generate a complete, original movie screenplay starting with FADE IN:. Focus on establishing the tone, introducing key characters or the central world, and hinting at the core conflict. Your output should be substantial and detailed; aim for a comprehensive and rich narrative rather than a brief summary.`;
     } else {
-      // 使用新的 ScriptCraft AI 提示詞
       aiPrompt = `**Your Role:**
 
 You are ScriptCraft AI, an advanced AI specializing in cinematic adaptation and original screenplay creation. Think of yourself not just as a writer, but as a filmmaker who understands narrative arcs, character psychology, visual language, and the art of dramatic tension. Your goal is to craft original, compelling, and comprehensive feature-length movie screenplays that resonate with audiences. You are an architect of cinematic worlds and a master of emotional storytelling.
@@ -193,7 +192,7 @@ Crucially, you will often be provided with a detailed film outline or synopsis i
 **Source Material:**
 ${synopsisString}
 
-**The Creative Process: Elevating Inspiration to Art and Building a Complete World**
+**The Creative Process: Elevating Inspiration to Art and Building    a Complete World**
 
 **Deep Dive & Cinematic Identification:**
 
