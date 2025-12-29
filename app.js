@@ -48,7 +48,17 @@ app.use("/api/rag", ragRouter);
 app.use("/api/auth", authRouter); //
 app.use("/api/templates", templatesRouter); // ADD TEMPLATES ROUTE
 app.use("/api/translation", translationRouter); // ADD TRANSLATION ROUTE
-app.use("/api/admin", adminRouter); // ADD ADMIN ROUTE
+
+// Add logging for admin route
+app.use("/api/admin", (req, res, next) => {
+  console.log(`[DEBUG] Admin route hit: ${req.method} ${req.url}`);
+  next();
+}, adminRouter); // ADD ADMIN ROUTE
+
+// Debug route for admin
+app.use("/api/admin-test", (req, res) => {
+  res.json({ message: "Admin test route working" });
+});
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {

@@ -2,22 +2,32 @@ const express = require("express");
 const router = express.Router();
 const { pool } = require("../config/database");
 const { authenticateToken } = require("./middlewarecheck/middleware");
-const bcrypt = require("bcrypt"); // Added bcrypt for password hashing
+const bcrypt = require("bcryptjs"); // Use bcryptjs for better compatibility
+
+// Debug route - No auth required
+router.get("/ping", (req, res) => {
+  console.log("Admin router ping reached");
+  res.json({ success: true, message: "pong" });
+});
 
 // Middleware to check if user is admin
 // Checks against a specific ADMIN_USER_ID in environment variables
 const isAdmin = (req, res, next) => {
+  console.log("Checking admin access for user:", req.user.userId);
   const userId = req.user.userId;
   const adminId = process.env.ADMIN_USER_ID;
 
   if (!adminId) {
       console.error("ADMIN_USER_ID is not set in .env");
-      return res.status(500).json({ success: false, message: "Server configuration error" });
+      console.error("Current User ID trying to access:", userId);
+      // For debugging purposes, we return 500 but with more info in logs
+      return res.status(500).json({ success: false, message: "Server configuration error: ADMIN_USER_ID missing" });
   }
 
-  if (userId === adminId) {
+  if (String(userId) === String(adminId)) {
     next();
   } else {
+    console.warn(`Access denied. User ${userId} is not Admin ${adminId}`);
     return res.status(403).json({ success: false, message: "Admin access required" });
   }
 };

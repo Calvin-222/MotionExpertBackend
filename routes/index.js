@@ -1,5 +1,6 @@
 var express = require("express");
 var router = express.Router();
+const { pool } = require("../config/database"); // Add pool import
 const { VertexAI } = require("@google-cloud/vertexai");
 const { authenticateToken } = require("./middlewarecheck/middleware");
 
