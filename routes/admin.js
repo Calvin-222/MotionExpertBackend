@@ -18,17 +18,24 @@ const isAdmin = (req, res, next) => {
   const adminId = process.env.ADMIN_USER_ID;
 
   if (!adminId) {
-      console.error("ADMIN_USER_ID is not set in .env");
-      console.error("Current User ID trying to access:", userId);
-      // For debugging purposes, we return 500 but with more info in logs
-      return res.status(500).json({ success: false, message: "Server configuration error: ADMIN_USER_ID missing" });
+    console.error("ADMIN_USER_ID is not set in .env");
+    console.error("Current User ID trying to access:", userId);
+    // For debugging purposes, we return 500 but with more info in logs
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Server configuration error: ADMIN_USER_ID missing",
+      });
   }
 
   if (String(userId) === String(adminId)) {
     next();
   } else {
     console.warn(`Access denied. User ${userId} is not Admin ${adminId}`);
-    return res.status(403).json({ success: false, message: "Admin access required" });
+    return res
+      .status(403)
+      .json({ success: false, message: "Admin access required" });
   }
 };
 
@@ -36,7 +43,9 @@ const isAdmin = (req, res, next) => {
 router.get("/users", authenticateToken, isAdmin, async (req, res) => {
   try {
     // Fetch userid, username, created_at, and avatarurl
-    const [users] = await pool.execute("SELECT userid, username, created_at, avatarurl FROM users");
+    const [users] = await pool.execute(
+      "SELECT userid, username, created_at, avatarurl FROM users"
+    );
     res.json({ success: true, users });
   } catch (error) {
     console.error("Get users error:", error);
@@ -50,25 +59,40 @@ router.post("/users", authenticateToken, isAdmin, async (req, res) => {
     const { username, password } = req.body;
 
     if (!username || !password) {
-      return res.status(400).json({ success: false, message: "Username and password are required" });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Username and password are required",
+        });
     }
 
     if (password.length < 6) {
-      return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Password must be at least 6 characters",
+        });
     }
 
     // Check if username exists
-    const [existing] = await pool.execute("SELECT userid FROM users WHERE username = ?", [username]);
+    const [existing] = await pool.execute(
+      "SELECT userid FROM users WHERE username = ?",
+      [username]
+    );
     if (existing.length > 0) {
-      return res.status(400).json({ success: false, message: "Username already exists" });
+      return res
+        .status(400)
+        .json({ success: false, message: "Username already exists" });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    
-    await pool.execute(
-      "INSERT INTO users (username, password) VALUES (?, ?)",
-      [username, hashedPassword]
-    );
+
+    await pool.execute("INSERT INTO users (username, password) VALUES (?, ?)", [
+      username,
+      hashedPassword,
+    ]);
 
     res.json({ success: true, message: "User created successfully" });
   } catch (error) {
@@ -92,11 +116,13 @@ router.put("/users/:id", authenticateToken, isAdmin, async (req, res) => {
     if (username) {
       // Check uniqueness if username is changing
       const [existing] = await pool.execute(
-        "SELECT userid FROM users WHERE username = ? AND userid != ?", 
+        "SELECT userid FROM users WHERE username = ? AND userid != ?",
         [username, userId]
       );
       if (existing.length > 0) {
-        return res.status(400).json({ success: false, message: "Username already taken" });
+        return res
+          .status(400)
+          .json({ success: false, message: "Username already taken" });
       }
       updates.push("username = ?");
       values.push(username);
@@ -104,7 +130,12 @@ router.put("/users/:id", authenticateToken, isAdmin, async (req, res) => {
 
     if (password) {
       if (password.length < 6) {
-        return res.status(400).json({ success: false, message: "Password must be at least 6 characters" });
+        return res
+          .status(400)
+          .json({
+            success: false,
+            message: "Password must be at least 6 characters",
+          });
       }
       const hashedPassword = await bcrypt.hash(password, 10);
       updates.push("password = ?");
@@ -116,7 +147,10 @@ router.put("/users/:id", authenticateToken, isAdmin, async (req, res) => {
     }
 
     values.push(userId);
-    await pool.execute(`UPDATE users SET ${updates.join(", ")} WHERE userid = ?`, values);
+    await pool.execute(
+      `UPDATE users SET ${updates.join(", ")} WHERE userid = ?`,
+      values
+    );
 
     res.json({ success: true, message: "User updated successfully" });
   } catch (error) {
@@ -139,7 +173,9 @@ router.get("/rag", authenticateToken, isAdmin, async (req, res) => {
     res.json({ success: true, engines });
   } catch (error) {
     console.error("Get RAG engines error:", error);
-    res.status(500).json({ success: false, message: "Failed to fetch RAG engines" });
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to fetch RAG engines" });
   }
 });
 
@@ -147,25 +183,32 @@ router.get("/rag", authenticateToken, isAdmin, async (req, res) => {
 router.post("/rag", authenticateToken, isAdmin, async (req, res) => {
   try {
     const { ragname, visibility, userid } = req.body;
-    
+
     if (!ragname || !userid) {
-      return res.status(400).json({ success: false, message: "RAG Name and Owner (User ID) are required" });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "RAG Name and Owner (User ID) are required",
+        });
     }
 
-    // Generate a simple ID or use UUID if preferred. 
+    // Generate a simple ID or use UUID if preferred.
     // Since ragid is varchar(255), we can use a timestamp-based ID or UUID.
     const crypto = require("crypto");
     const ragid = crypto.randomUUID();
 
     await pool.execute(
       "INSERT INTO rag (ragid, userid, ragname, visibility) VALUES (?, ?, ?, ?)",
-      [ragid, userid, ragname, visibility || 'Private']
+      [ragid, userid, ragname, visibility || "Private"]
     );
 
     res.json({ success: true, message: "RAG Engine created successfully" });
   } catch (error) {
     console.error("Create RAG error:", error);
-    res.status(500).json({ success: false, message: "Failed to create RAG engine" });
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to create RAG engine" });
   }
 });
 
@@ -174,7 +217,7 @@ router.put("/rag/:id", authenticateToken, isAdmin, async (req, res) => {
   try {
     const ragId = req.params.id;
     const { ragname, visibility } = req.body;
-    
+
     const updates = [];
     const values = [];
 
@@ -192,12 +235,17 @@ router.put("/rag/:id", authenticateToken, isAdmin, async (req, res) => {
     }
 
     values.push(ragId);
-    await pool.execute(`UPDATE rag SET ${updates.join(", ")} WHERE ragid = ?`, values);
+    await pool.execute(
+      `UPDATE rag SET ${updates.join(", ")} WHERE ragid = ?`,
+      values
+    );
 
     res.json({ success: true, message: "RAG Engine updated successfully" });
   } catch (error) {
     console.error("Update RAG error:", error);
-    res.status(500).json({ success: false, message: "Failed to update RAG engine" });
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to update RAG engine" });
   }
 });
 
@@ -209,7 +257,9 @@ router.delete("/rag/:id", authenticateToken, isAdmin, async (req, res) => {
     res.json({ success: true, message: "RAG Engine deleted successfully" });
   } catch (error) {
     console.error("Delete RAG error:", error);
-    res.status(500).json({ success: false, message: "Failed to delete RAG engine" });
+    res
+      .status(500)
+      .json({ success: false, message: "Failed to delete RAG engine" });
   }
 });
 
@@ -217,10 +267,15 @@ router.delete("/rag/:id", authenticateToken, isAdmin, async (req, res) => {
 router.delete("/users/:id", authenticateToken, isAdmin, async (req, res) => {
   try {
     const userIdToDelete = req.params.id;
-    
+
     // Prevent deleting yourself
     if (userIdToDelete == req.user.userId) {
-        return res.status(400).json({ success: false, message: "Cannot delete your own admin account" });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "Cannot delete your own admin account",
+        });
     }
 
     await pool.execute("DELETE FROM users WHERE userid = ?", [userIdToDelete]);
@@ -234,15 +289,17 @@ router.delete("/users/:id", authenticateToken, isAdmin, async (req, res) => {
 // Get System Stats
 router.get("/stats", authenticateToken, isAdmin, async (req, res) => {
   try {
-    const [userCount] = await pool.execute("SELECT COUNT(*) as count FROM users");
+    const [userCount] = await pool.execute(
+      "SELECT COUNT(*) as count FROM users"
+    );
     const [ragCount] = await pool.execute("SELECT COUNT(*) as count FROM rag");
-    
+
     res.json({
       success: true,
       stats: {
         users: userCount[0].count,
-        ragEngines: ragCount[0].count
-      }
+        ragEngines: ragCount[0].count,
+      },
     });
   } catch (error) {
     console.error("Get stats error:", error);
@@ -252,26 +309,27 @@ router.get("/stats", authenticateToken, isAdmin, async (req, res) => {
 
 // Get Google Cloud Console Link
 router.get("/gcp-link", authenticateToken, isAdmin, (req, res) => {
-    const projectId = process.env.GOOGLE_CLOUD_PROJECT || "motionexpaiweb";
-    const link = `https://console.cloud.google.com/home/dashboard?project=${projectId}`;
-    res.json({ success: true, link });
+  const projectId = process.env.GOOGLE_CLOUD_PROJECT || "motionexpaiweb";
+  const link = `https://console.cloud.google.com/home/dashboard?project=${projectId}`;
+  res.json({ success: true, link });
 });
 
 // Execute Raw SQL (Use with CAUTION)
 router.post("/sql", authenticateToken, isAdmin, async (req, res) => {
-    const { query } = req.body;
-    if (!query) return res.status(400).json({ success: false, message: "Query required" });
+  const { query } = req.body;
+  if (!query)
+    return res.status(400).json({ success: false, message: "Query required" });
 
-    // Basic safety check - prevent DROP/TRUNCATE if needed, but admins usually need full power
-    // For this demo, we'll allow it but log it heavily
-    console.warn(`[ADMIN SQL EXEC] User ${req.user.username} executed: ${query}`);
+  // Basic safety check - prevent DROP/TRUNCATE if needed, but admins usually need full power
+  // For this demo, we'll allow it but log it heavily
+  console.warn(`[ADMIN SQL EXEC] User ${req.user.username} executed: ${query}`);
 
-    try {
-        const [results] = await pool.execute(query);
-        res.json({ success: true, results });
-    } catch (error) {
-        res.status(400).json({ success: false, message: error.message });
-    }
+  try {
+    const [results] = await pool.execute(query);
+    res.json({ success: true, results });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
 });
 
 module.exports = router;
