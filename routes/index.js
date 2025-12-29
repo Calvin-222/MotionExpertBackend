@@ -218,7 +218,8 @@ router.post(
     try {
       console.log("正在處理劇本後續指令...");
 
-      const { followUpString, engineId, previousResponse, templateId } = req.body;
+      const { followUpString, engineId, previousResponse, templateId } =
+        req.body;
       const userId = req.user.userId;
 
       if (!followUpString) {
@@ -247,7 +248,9 @@ router.post(
       let templateInfo = null;
       if (templateId) {
         try {
-          console.log(`[DEBUG] Processing templateId for follow-up: ${templateId}`);
+          console.log(
+            `[DEBUG] Processing templateId for follow-up: ${templateId}`
+          );
 
           const [templates] = await pool.execute(
             "SELECT scriptname, template_structure FROM script_template WHERE id = ? AND userid = ?",
@@ -259,7 +262,10 @@ router.post(
               const rawTemplateStructure = templates[0].template_structure;
               let templateStructure;
 
-              if (typeof rawTemplateStructure === "object" && rawTemplateStructure !== null) {
+              if (
+                typeof rawTemplateStructure === "object" &&
+                rawTemplateStructure !== null
+              ) {
                 templateStructure = rawTemplateStructure;
               } else if (typeof rawTemplateStructure === "string") {
                 if (rawTemplateStructure === "[object Object]") {
@@ -276,22 +282,30 @@ router.post(
                 structure: templateStructure,
               };
 
-              console.log(`[DEBUG] Successfully loaded template for follow-up: ${templateInfo.name}`);
+              console.log(
+                `[DEBUG] Successfully loaded template for follow-up: ${templateInfo.name}`
+              );
             } catch (jsonError) {
-              console.error("[DEBUG] Error parsing template_structure JSON for follow-up:", jsonError);
+              console.error(
+                "[DEBUG] Error parsing template_structure JSON for follow-up:",
+                jsonError
+              );
             }
           }
         } catch (error) {
-          console.error("[DEBUG] Database error while handling template for follow-up:", error);
+          console.error(
+            "[DEBUG] Database error while handling template for follow-up:",
+            error
+          );
         }
       }
 
       // 重用 MSWwithFIile.js 中的完整 ScriptCraft AI 提示詞邏輯
       let aiPrompt;
-      
+
       // 構建包含 follow-up 指令的 synopsisString
       const followUpSynopsisString = `**Previous Context:**
-${previousResponse ? previousResponse : 'This is a follow-up request for screenplay modification.'}
+${previousResponse ? previousResponse : "This is a follow-up request for screenplay modification."}
 
 **User's Follow-up Instructions:**
 ${followUpString}

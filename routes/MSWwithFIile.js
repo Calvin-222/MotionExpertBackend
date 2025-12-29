@@ -4,11 +4,31 @@ const { authenticateToken } = require("./middlewarecheck/middleware");
 const { pool } = require("../config/database");
 const MultiUserRAGSystem = require("./rag/MultiUserRAGSystem");
 const ragSystem = new MultiUserRAGSystem();
+const { Storage } = require("@google-cloud/storage");
+
+// Initialize Google Cloud Storage
+const storage = new Storage({
+  projectId: "motionexpaiweb",
+  keyFilename: "./motionexpaiweb-471ee0d1e3d6.json",
+});
+const bucketName = "motion_expert_generated_data";
+
+// Available Models
+const AVAILABLE_MODELS = [
+  { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+  { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+  // { id: "deepseek-ai/deepseek-r1-0528-maas", name: "DeepSeek R1 0528" },
+];
+
+// Get Available Models API
+router.get("/models", authenticateToken, (req, res) => {
+  res.json({ success: true, models: AVAILABLE_MODELS });
+});
 
 // 主要 router：直接用 RAG Engine 回答
 router.post("/askai", authenticateToken, async (req, res) => {
   try {
-    const { synopsisString, engineId, templateId } = req.body; // 新增 templateId 參數
+    const { synopsisString, engineId, templateId, model } = req.body; // 新增 templateId 和 model 參數
     const userId = req.user.userId;
 
     if (!synopsisString || !engineId) {
@@ -179,7 +199,6 @@ ${synopsisString}
 **Your Task:**
 Analyze the provided source material and template framework. Generate a complete, original movie screenplay starting with FADE IN:. Focus on establishing the tone, introducing key characters or the central world, and hinting at the core conflict. Your output should be substantial and detailed; aim for a comprehensive and rich narrative rather than a brief summary.`;
     } else {
-      // 使用新的 ScriptCraft AI 提示詞
       aiPrompt = `**Your Role:**
 
 You are ScriptCraft AI, an advanced AI specializing in cinematic adaptation and original screenplay creation. Think of yourself not just as a writer, but as a filmmaker who understands narrative arcs, character psychology, visual language, and the art of dramatic tension. Your goal is to craft original, compelling, and comprehensive feature-length movie screenplays that resonate with audiences. You are an architect of cinematic worlds and a master of emotional storytelling.
@@ -193,7 +212,7 @@ Crucially, you will often be provided with a detailed film outline or synopsis i
 **Source Material:**
 ${synopsisString}
 
-**The Creative Process: Elevating Inspiration to Art and Building a Complete World**
+**The Creative Process: Elevating Inspiration to Art and Building    a Complete World**
 
 **Deep Dive & Cinematic Identification:**
 
@@ -240,7 +259,12 @@ Analyze the provided source material. Based on all the guidelines above, generat
     }
 
     // 用包裝後的 prompt 送給 RAG query function
-    const result = await ragSystem.queryUserRAG(userId, aiPrompt, engineId);
+    const result = await ragSystem.queryUserRAG(
+      userId,
+      aiPrompt,
+      engineId,
+      model
+    );
 
     if (result.success) {
       res.json({
@@ -250,6 +274,7 @@ Analyze the provided source material. Based on all the guidelines above, generat
         originalInput: synopsisString,
         templateUsed: templateInfo?.name || null,
         engineId: engineId,
+        model: result.aiGenerationDetails?.model || model || "default",
       });
     } else {
       res.status(500).json({
@@ -267,5 +292,58 @@ Analyze the provided source material. Based on all the guidelines above, generat
     });
   }
 });
+
+// Save to Cloud API
+// router.post("/save-to-cloud", authenticateToken, async (req, res) => {
+//   try {
+//     const { text, title } = req.body;
+//     const userId = req.user.userId;
+
+//     if (!text || !title) {
+//       return res.status(400).json({ success: false, message: "Text and title are required" });
+//     }
+
+//     const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+//     // Sanitize title to be safe for filenames
+//     const safeTitle = title.replace(/[^a-zA-Z0-9-_]/g, "_");
+//     const filename = `${userId}/${timestamp}_${safeTitle}.txt`;
+//     const file = storage.bucket(bucketName).file(filename);
+
+//     await file.save(text, {
+//       metadata: {
+//         contentType: "text/plain",
+//       },
+//     });
+
+//     res.json({ success: true, message: "File saved successfully", filename });
+//   } catch (error) {
+//     console.error("Error saving to cloud:", error);
+//     res.status(500).json({ success: false, message: "Failed to save file", error: error.message });
+//   }
+// });
+
+// List Cloud Files API
+// router.get("/list-cloud-files", authenticateToken, async (req, res) => {
+//   try {
+//     const userId = req.user.userId;
+//     // Ensure the bucket exists or handle error if it doesn't (optional, but good practice)
+//     // For now assuming bucket exists as per instructions
+
+//     const [files] = await storage.bucket(bucketName).getFiles({ prefix: `${userId}/` });
+
+//     const fileList = files.map(file => ({
+//       name: file.name,
+//       updated: file.metadata.updated,
+//       size: file.metadata.size,
+//       // Extract title from filename if needed, or just return full name
+//       simpleName: file.name.split('/').pop()
+//     }));
+
+//     res.json({ success: true, files: fileList });
+//   } catch (error) {
+//     console.error("Error listing cloud files:", error);
+//     res.status(500).json({ success: false, message: "Failed to list files", error: error.message });
+//   }
+// });
 
 module.exports = router;

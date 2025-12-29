@@ -3,25 +3,20 @@ var router = express.Router();
 const { pool } = require("../config/database");
 const { authenticateToken } = require("./middlewarecheck/middleware");
 
-
-
-router.get('/search-users',authenticateToken, async (req, res) => {
-
+router.get("/search-users", authenticateToken, async (req, res) => {
   try {
-    const searchTerm = req.query.search || '';
+    const searchTerm = req.query.search || "";
     const currentUsername = req.user.username;
     const currentUserId = req.user.userId;
-
 
     if (!searchTerm || searchTerm.trim().length < 3) {
       return res.json({
         success: true,
         users: [],
         count: 0,
-        message: ''
+        message: "",
       });
     }
-
 
     // Get users with their friendship status (checking both directions)
     const query = `
@@ -38,81 +33,94 @@ router.get('/search-users',authenticateToken, async (req, res) => {
     const [users] = await pool.execute(query, [
       currentUserId,
       `%${searchTerm}%`,
-      currentUsername
+      currentUsername,
     ]);
 
     // Convert isFriend from 0/1 to boolean
-    const usersWithFriendStatus = users.map(user => ({
+    const usersWithFriendStatus = users.map((user) => ({
       username: user.username,
-      isFriend: !!user.isFriend
+      isFriend: !!user.isFriend,
     }));
 
     res.json({
       success: true,
       users: usersWithFriendStatus,
-      count: usersWithFriendStatus.length
+      count: usersWithFriendStatus.length,
     });
   } catch (error) {
-    console.error('Search error:', error);
+    console.error("Search error:", error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: "Server error",
     });
   }
 });
 
-router.post('/add-friend', authenticateToken, async (req, res) => {
+router.post("/add-friend", authenticateToken, async (req, res) => {
   try {
     const { friendUsername } = req.body;
     const currentUserId = req.user.userId; // From JWT
 
     // Get friend's userid
-    const friendQuery = 'SELECT userid FROM users WHERE username = ?';
+    const friendQuery = "SELECT userid FROM users WHERE username = ?";
     const [friendResult] = await pool.execute(friendQuery, [friendUsername]);
 
     if (friendResult.length === 0) {
-      return res.status(404).json({ success: false, message: 'User not found' });
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
     }
 
     const friendId = friendResult[0].userid;
 
-
     //Prevent a user from adding themselves.
     if (currentUserId === friendId) {
-      return res.status(400).json({ success: false, message: 'You cannot add yourself as a friend.' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "You cannot add yourself as a friend.",
+        });
     }
 
     // Check if already friends, in either direction.
     const existingQuery = `
       SELECT id FROM friendship WHERE (userid = ? AND friendid = ?)
     `;
-    const [existing] = await pool.execute(existingQuery, [currentUserId, friendId,]);
+    const [existing] = await pool.execute(existingQuery, [
+      currentUserId,
+      friendId,
+    ]);
 
     if (existing.length > 0) {
       // Updated the message to be more generic.
-      return res.status(400).json({ success: false, message: 'You are already friends with this user.' });
+      return res
+        .status(400)
+        .json({
+          success: false,
+          message: "You are already friends with this user.",
+        });
     }
 
-
-    // Insert friendship 
-    const insertQuery = 'INSERT INTO friendship (userid, friendid) VALUES (?, ?)';
+    // Insert friendship
+    const insertQuery =
+      "INSERT INTO friendship (userid, friendid) VALUES (?, ?)";
     await pool.execute(insertQuery, [currentUserId, friendId]);
 
-    res.json({ success: true, message: 'Friend added successfully' }); // I don't have request don't fucking change this
-
+    res.json({ success: true, message: "Friend added successfully" }); // I don't have request don't fucking change this
   } catch (error) {
-    console.error('Add friend error:', error);
-    res.status(500).json({ success: false, message: 'Server error' });
+    console.error("Add friend error:", error);
+    res.status(500).json({ success: false, message: "Server error" });
   }
 });
 // Get friend notifications (people who added current user as friend but user hasn't added them back)
-router.get('/notifications', authenticateToken, async (req, res) => {
+router.get("/notifications", authenticateToken, async (req, res) => {
   try {
     const currentUserId = req.user.userId;
 
     // Find users who added current user as friend but current user hasn't added them back
     const query = `
-      SELECT f.userid, u.username, f.id
+      SELECT f.userid, u.username, f.id, f.created_at
       FROM friendship f
       JOIN users u ON f.userid = u.userid
       WHERE f.friendid = ? 
@@ -124,25 +132,27 @@ router.get('/notifications', authenticateToken, async (req, res) => {
       ORDER BY f.created_at DESC
     `;
 
-    const [notifications] = await pool.execute(query, [currentUserId, currentUserId]);
+    const [notifications] = await pool.execute(query, [
+      currentUserId,
+      currentUserId,
+    ]);
 
     res.json({
       success: true,
       notifications: notifications,
-      count: notifications.length
+      count: notifications.length,
     });
-
   } catch (error) {
-    console.error('Notifications error:', error);
+    console.error("Notifications error:", error);
     res.status(500).json({
       success: false,
-      message: 'Server error'
+      message: "Server error",
     });
   }
 });
 
 // Add friend back (when user accepts a friend request)
-router.post('/add-friend-back', authenticateToken, async (req, res) => {
+router.post("/add-friend-back", authenticateToken, async (req, res) => {
   try {
     const { friendUserId } = req.body;
     const currentUserId = req.user.userId;
@@ -152,12 +162,15 @@ router.post('/add-friend-back', authenticateToken, async (req, res) => {
       SELECT id FROM friendship 
       WHERE userid = ? AND friendid = ? AND Known = 'false'
     `;
-    const [existingRequest] = await pool.execute(checkQuery, [friendUserId, currentUserId]);
+    const [existingRequest] = await pool.execute(checkQuery, [
+      friendUserId,
+      currentUserId,
+    ]);
 
     if (existingRequest.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Friend request not found' 
+      return res.status(404).json({
+        success: false,
+        message: "Friend request not found",
       });
     }
 
@@ -166,33 +179,37 @@ router.post('/add-friend-back', authenticateToken, async (req, res) => {
       SELECT id FROM friendship 
       WHERE userid = ? AND friendid = ?
     `;
-    const [alreadyFriends] = await pool.execute(alreadyFriendsQuery, [currentUserId, friendUserId]);
+    const [alreadyFriends] = await pool.execute(alreadyFriendsQuery, [
+      currentUserId,
+      friendUserId,
+    ]);
 
     if (alreadyFriends.length > 0) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'You have already added this user as a friend' 
+      return res.status(400).json({
+        success: false,
+        message: "You have already added this user as a friend",
       });
     }
 
     // Add friendship back (current user adds the friend)
-    const insertQuery = 'INSERT INTO friendship (userid, friendid, Known) VALUES (?, ?, ?)';
-    await pool.execute(insertQuery, [currentUserId, friendUserId, 'true']);
+    const insertQuery =
+      "INSERT INTO friendship (userid, friendid, Known) VALUES (?, ?, ?)";
+    await pool.execute(insertQuery, [currentUserId, friendUserId, "true"]);
 
     // Update the original friendship record to mark as known
-    const updateQuery = 'UPDATE friendship SET Known = ? WHERE userid = ? AND friendid = ?';
-    await pool.execute(updateQuery, ['true', friendUserId, currentUserId]);
+    const updateQuery =
+      "UPDATE friendship SET Known = ? WHERE userid = ? AND friendid = ?";
+    await pool.execute(updateQuery, ["true", friendUserId, currentUserId]);
 
-    res.json({ 
-      success: true, 
-      message: 'Friend added back successfully' 
+    res.json({
+      success: true,
+      message: "Friend added back successfully",
     });
-
   } catch (error) {
-    console.error('Add friend back error:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: 'Server error' 
+    console.error("Add friend back error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
     });
   }
 });

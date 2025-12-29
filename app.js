@@ -43,12 +43,17 @@ app.use(cors());
 app.use(express.static("public"));
 app.use("/", indexRouter);
 app.use("/api/users", require("./routes/users"));
+app.use("/api/friends", friendsRouter); // ADD FRIENDS ROUTE
 app.use("/api/rag", ragRouter);
 app.use("/api/auth", authRouter); //
-app.use("/api/friends", friendsRouter); // ADD THIS LINE
 app.use("/api/templates", templatesRouter); // ADD TEMPLATES ROUTE
 app.use("/api/translation", translationRouter); // ADD TRANSLATION ROUTE
+<<<<<<< HEAD
 app.use("/api/admin", adminRouter); // ADD ADMIN ROUTE
+=======
+app.use("/api/cloud", cloudRouter); // ADD CLOUD ROUTE
+app.use("/api/translation", translationRouter); // ADD TRANSLATION ROUTE
+>>>>>>> 1ab169aa48f8c01f7c4a4a2345d395fd905485f0
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {

@@ -16,21 +16,23 @@ const upload = multer({
   fileFilter: (req, file, cb) => {
     console.log(`🔍 [MULTER] 接收檔案: ${file.originalname}`);
     console.log(`🔍 [MULTER] 原始位元組:`, Buffer.from(file.originalname));
-    
+
     // 修復中文檔名編碼問題
     try {
       // 將檔名從 latin1 轉換回正確的 UTF-8
-      const fixedFilename = Buffer.from(file.originalname, 'latin1').toString('utf8');
+      const fixedFilename = Buffer.from(file.originalname, "latin1").toString(
+        "utf8"
+      );
       console.log(`✅ [MULTER] 修復後檔名: ${fixedFilename}`);
-      
+
       // 覆蓋原始檔名
       file.originalname = fixedFilename;
     } catch (error) {
       console.error(`❌ [MULTER] 檔名修復失敗:`, error.message);
     }
-    
+
     cb(null, true);
-  }
+  },
 });
 
 // 🔧 使用統一的 RAG 系統
@@ -229,7 +231,10 @@ router.post(
       console.log(`  originalname type: ${typeof file.originalname}`);
       console.log(`  originalname.length: ${file.originalname.length}`);
       console.log(`  originalname bytes:`, [...Buffer.from(file.originalname)]);
-      console.log(`  originalname hex:`, Buffer.from(file.originalname).toString('hex'));
+      console.log(
+        `  originalname hex:`,
+        Buffer.from(file.originalname).toString("hex")
+      );
       console.log(`  buffer size: ${file.buffer.length} bytes`);
       console.log(`  mimetype: ${file.mimetype}`);
       console.log(`  encoding: ${file.encoding}`);
@@ -237,7 +242,9 @@ router.post(
       // 測試不同的編碼解析
       console.log(`\n🔍 Testing different encodings:`);
       try {
-        const utf8Decoded = Buffer.from(file.originalname, 'utf8').toString('utf8');
+        const utf8Decoded = Buffer.from(file.originalname, "utf8").toString(
+          "utf8"
+        );
         console.log(`  UTF8 roundtrip: "${utf8Decoded}"`);
         console.log(`  UTF8 match: ${utf8Decoded === file.originalname}`);
       } catch (e) {
@@ -245,7 +252,9 @@ router.post(
       }
 
       try {
-        const latin1ToUtf8 = Buffer.from(file.originalname, 'latin1').toString('utf8');
+        const latin1ToUtf8 = Buffer.from(file.originalname, "latin1").toString(
+          "utf8"
+        );
         console.log(`  Latin1->UTF8: "${latin1ToUtf8}"`);
       } catch (e) {
         console.log(`  Latin1->UTF8 test failed: ${e.message}`);
@@ -254,28 +263,30 @@ router.post(
       // 測試直接插入資料庫
       console.log(`\n💾 Testing database insertion:`);
       try {
-        const { pool } = require('../config/database');
-        
+        const { pool } = require("../config/database");
+
         // 建立測試記錄
-        const testRagId = '9999999999999999999'; // 測試用
+        const testRagId = "9999999999999999999"; // 測試用
         const [insertResult] = await pool.execute(
-          'INSERT INTO rag_file_name (ragid, filename) VALUES (?, ?) ON DUPLICATE KEY UPDATE filename = VALUES(filename)',
+          "INSERT INTO rag_file_name (ragid, filename) VALUES (?, ?) ON DUPLICATE KEY UPDATE filename = VALUES(filename)",
           [testRagId, file.originalname]
         );
-        
+
         // 立即查詢
         const [selectResult] = await pool.execute(
-          'SELECT filename FROM rag_file_name WHERE ragid = ? ORDER BY created_at DESC LIMIT 1',
+          "SELECT filename FROM rag_file_name WHERE ragid = ? ORDER BY created_at DESC LIMIT 1",
           [testRagId]
         );
-        
+
         if (selectResult.length > 0) {
           const dbFilename = selectResult[0].filename;
           console.log(`  DB storage: "${dbFilename}"`);
           console.log(`  DB match: ${dbFilename === file.originalname}`);
-          
+
           // 清理測試數據
-          await pool.execute('DELETE FROM rag_file_name WHERE ragid = ?', [testRagId]);
+          await pool.execute("DELETE FROM rag_file_name WHERE ragid = ?", [
+            testRagId,
+          ]);
         }
       } catch (dbError) {
         console.log(`  DB test failed: ${dbError.message}`);
@@ -285,21 +296,24 @@ router.post(
         success: true,
         originalFilename: file.originalname,
         filenameBytes: [...Buffer.from(file.originalname)],
-        filenameHex: Buffer.from(file.originalname).toString('hex'),
+        filenameHex: Buffer.from(file.originalname).toString("hex"),
         bufferSize: file.buffer.length,
         mimetype: file.mimetype,
         encoding: file.encoding,
         tests: {
-          utf8Roundtrip: Buffer.from(file.originalname, 'utf8').toString('utf8'),
-          latin1ToUtf8: Buffer.from(file.originalname, 'latin1').toString('utf8')
-        }
+          utf8Roundtrip: Buffer.from(file.originalname, "utf8").toString(
+            "utf8"
+          ),
+          latin1ToUtf8: Buffer.from(file.originalname, "latin1").toString(
+            "utf8"
+          ),
+        },
       });
-
     } catch (error) {
-      console.error('🧪 Test upload error:', error);
+      console.error("🧪 Test upload error:", error);
       res.status(500).json({
         success: false,
-        error: error.message
+        error: error.message,
       });
     }
   }
@@ -337,12 +351,15 @@ router.post(
       console.log(
         `📤 User ${targetUserId} uploading file: ${file.originalname} to engine: ${ragId}`
       );
-      
+
       // 🔍 詳細調試檔名編碼
       console.log(`🔍 File details:`);
       console.log(`  originalname: ${file.originalname}`);
       console.log(`  originalname type: ${typeof file.originalname}`);
-      console.log(`  originalname bytes:`, Buffer.from(file.originalname, 'utf8'));
+      console.log(
+        `  originalname bytes:`,
+        Buffer.from(file.originalname, "utf8")
+      );
       console.log(`  originalname length: ${file.originalname.length}`);
       console.log(`  buffer size: ${file.buffer.length} bytes`);
       console.log(`  mimetype: ${file.mimetype}`);
@@ -922,5 +939,150 @@ router.post(
     }
   }
 );
+
+// GCS File to RAG API (For ragtest.vue)
+// Frontend calls: /api/rag/index-cloud-file
+router.post("/index-cloud-file", authenticateToken, async (req, res) => {
+  try {
+    // Frontend sends: { fileName, cloudFileName, ragId, bucket }
+    // Backend expected: { gcs_file_path, target_filename, rag_id }
+    // Mapping:
+    // cloudFileName -> gcs_file_path (but frontend sends just name, we need full path?)
+    // Actually frontend sends `cloudFileName: this.selectedCloudFile.name` which is likely the full path `userId/filename.txt` because `list-cloud-files` returns `name` as full path.
+    // fileName -> target_filename
+    // ragId -> rag_id
+
+    const { cloudFileName, fileName, ragId, bucket } = req.body;
+    const userId = req.user.userId;
+
+    if (!cloudFileName || !fileName || !ragId) {
+      return res.status(400).json({
+        success: false,
+        message: "cloudFileName, fileName, and ragId are required",
+      });
+    }
+
+    // Initialize storage to read from the generated data bucket
+    const { Storage } = require("@google-cloud/storage");
+    const storage = new Storage({
+      projectId: "motionexpaiweb",
+      keyFilename: "./motionexpaiweb-471ee0d1e3d6.json",
+    });
+    const sourceBucketName = bucket || "motion_expert_generated_data";
+
+    // Check if file exists first
+    const sourceFile = storage.bucket(sourceBucketName).file(cloudFileName);
+    const [exists] = await sourceFile.exists();
+    if (!exists) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Source file not found in GCS" });
+    }
+
+    const [fileContent] = await sourceFile.download();
+
+    // Naming: The final filename stored in the system must include the UserID
+    const finalFilename = `${userId}_${fileName}`;
+
+    const file = {
+      buffer: fileContent,
+      originalname: finalFilename,
+      mimetype: "text/plain",
+    };
+
+    const result = await ragSystem.uploadToUserRAG(
+      userId,
+      file,
+      finalFilename,
+      ragId
+    );
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: "GCS file imported to RAG successfully",
+        result,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: result.error || "Failed to import GCS file to RAG",
+      });
+    }
+  } catch (error) {
+    console.error("Error importing GCS file to RAG:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+});
+
+// Direct Text to RAG API (For SynopsisEditorPage)
+// Frontend calls: /api/rag/add-content (inferred from logs)
+router.post("/add-content", authenticateToken, async (req, res) => {
+  try {
+    // Frontend sends: { content, ragId, filename }
+    // Backend expected: { text_content, rag_id }
+    const { text_content, rag_id, content, ragId, filename } = req.body;
+    const userId = req.user.userId;
+
+    const textContent = text_content || content;
+    const targetRagId = rag_id || ragId;
+
+    if (!textContent || !targetRagId) {
+      return res.status(400).json({
+        success: false,
+        message: "text_content/content and rag_id/ragId are required",
+      });
+    }
+
+    // Create a buffer from the text content
+    const buffer = Buffer.from(textContent, "utf8");
+
+    let finalFilename;
+    if (filename) {
+      finalFilename = filename;
+    } else {
+      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+      finalFilename = `generated_text_${timestamp}.txt`;
+    }
+
+    // Mock a file object similar to what multer produces
+    const file = {
+      buffer: buffer,
+      originalname: finalFilename,
+      mimetype: "text/plain",
+    };
+
+    const result = await ragSystem.uploadToUserRAG(
+      userId,
+      file,
+      finalFilename,
+      targetRagId
+    );
+
+    if (result.success) {
+      res.json({
+        success: true,
+        message: "Text added to RAG successfully",
+        result,
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: result.error || "Failed to add text to RAG",
+      });
+    }
+  } catch (error) {
+    console.error("Error adding text to RAG:", error);
+    res.status(500).json({
+      success: false,
+      message: "Internal server error",
+      error: error.message,
+    });
+  }
+});
 
 module.exports = router;
