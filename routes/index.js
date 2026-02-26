@@ -208,7 +208,7 @@ ${synopsisString}
         details: error.details || "Unknown error",
       });
     }
-  }
+  },
 );
 
 /* 新增：POST API for Synopsis follow-up - 處理後續指令 */
@@ -219,7 +219,7 @@ router.post(
     try {
       console.log("正在處理劇本後續指令...");
 
-      const { followUpString, engineId, previousResponse, templateId } =
+      const { followUpString, engineId, previousResponse, templateId, model } =
         req.body;
       const userId = req.user.userId;
 
@@ -250,53 +250,65 @@ router.post(
       if (templateId) {
         try {
           console.log(
-            `[DEBUG] Processing templateId for follow-up: ${templateId}`
+            `[DEBUG] Processing templateId for follow-up: ${templateId}`,
           );
 
-          const [templates] = await pool.execute(
-            "SELECT scriptname, template_structure FROM script_template WHERE id = ? AND userid = ?",
-            [templateId, userId]
-          );
+          // 特殊處理：如果是 fallback 模板，標記為使用默認結構（有模板模式）
+          if (templateId === "fallback") {
+            console.log(
+              `[DEBUG] Using fallback template for follow-up (有模板模式)`,
+            );
+            templateInfo = {
+              name: "Default Structure (Fallback)",
+              structure: { isFallback: true },
+            };
+          } else {
+            // 支持公共模板：查詢用戶自己的模板或公共模板 (userid = 'SYSTEM')
+            const [templates] = await pool.execute(
+              "SELECT scriptname, template_structure FROM script_template WHERE id = ? AND (userid = ? OR userid = 'SYSTEM')",
+              [templateId, userId],
+            );
 
-          if (templates.length > 0) {
-            try {
-              const rawTemplateStructure = templates[0].template_structure;
-              let templateStructure;
+            if (templates.length > 0) {
+              try {
+                const rawTemplateStructure = templates[0].template_structure;
+                let templateStructure;
 
-              if (
-                typeof rawTemplateStructure === "object" &&
-                rawTemplateStructure !== null
-              ) {
-                templateStructure = rawTemplateStructure;
-              } else if (typeof rawTemplateStructure === "string") {
-                if (rawTemplateStructure === "[object Object]") {
-                  throw new Error("Invalid template structure");
+                if (
+                  typeof rawTemplateStructure === "object" &&
+                  rawTemplateStructure !== null
+                ) {
+                  templateStructure = rawTemplateStructure;
+                } else if (typeof rawTemplateStructure === "string") {
+                  if (rawTemplateStructure === "[object Object]") {
+                    throw new Error("Invalid template structure");
+                  } else {
+                    templateStructure = JSON.parse(rawTemplateStructure);
+                  }
                 } else {
-                  templateStructure = JSON.parse(rawTemplateStructure);
+                  throw new Error("Unknown template structure format");
                 }
-              } else {
-                throw new Error("Unknown template structure format");
+
+                templateInfo = {
+                  name: templates[0].scriptname,
+                  structure: templateStructure,
+                };
+
+                console.log(
+                  `[DEBUG] Successfully loaded template for follow-up: ${templateInfo.name}`,
+                );
+              } catch (jsonError) {
+                console.error(
+                  "[DEBUG] Error parsing template_structure JSON for follow-up:",
+                  jsonError,
+                );
               }
-
-              templateInfo = {
-                name: templates[0].scriptname,
-                structure: templateStructure,
-              };
-
-              console.log(
-                `[DEBUG] Successfully loaded template for follow-up: ${templateInfo.name}`
-              );
-            } catch (jsonError) {
-              console.error(
-                "[DEBUG] Error parsing template_structure JSON for follow-up:",
-                jsonError
-              );
             }
           }
         } catch (error) {
           console.error(
             "[DEBUG] Database error while handling template for follow-up:",
-            error
+            error,
           );
         }
       }
@@ -314,6 +326,27 @@ ${followUpString}
 **Task:** Please address the user's follow-up instructions by modifying, expanding, or refining the screenplay content accordingly. Maintain professional screenplay formatting and narrative consistency.`;
 
       if (templateInfo) {
+        // 構建模板框架描述
+        let templateFrameworkDescription;
+        if (templateInfo.structure.isFallback) {
+          // Fallback 模板使用簡化描述
+          templateFrameworkDescription = `You are using the "${templateInfo.name}" framework, which follows a classic three-act structure with sections for Setup, Confrontation, Climax, and Resolution.`;
+        } else if (templateInfo.structure.sections) {
+          // 自定義模板顯示詳細的 sections
+          templateFrameworkDescription = `You are using the "${templateInfo.name}" framework with the following sections:
+${templateInfo.structure.sections
+  .map(
+    (section) =>
+      `- ${section.title}: ${section.fields
+        .map((field) => field.label)
+        .join(", ")}`,
+  )
+  .join("\n")}`;
+        } else {
+          // 安全後備
+          templateFrameworkDescription = `You are using the "${templateInfo.name}" framework.`;
+        }
+
         // 使用模板資訊的完整提示詞（從 MSWwithFIile.js 複製）
         aiPrompt = `**Your Role:**
 You are ScriptCraft AI, an advanced AI specializing in cinematic adaptation and original screenplay creation. Think of yourself not just as a writer, but as a filmmaker who understands narrative arcs, character psychology, visual language, and the art of dramatic tension. Your goal is to craft original, compelling screenplays that resonate with audiences.
@@ -321,16 +354,18 @@ You are ScriptCraft AI, an advanced AI specializing in cinematic adaptation and 
 **Your Core Mission:**
 You will be provided with analyzed source material via a Retrieval-Augmented Generation (RAG) process. Your mission is to synthesize this information into a fully original, feature-length movie screenplay. This means identifying the most cinematic and emotionally impactful elements, then building a unique narrative around them. You are to create, not just report.
 
+**CRITICAL INSTRUCTION - YOU MUST FOLLOW THIS:**
+- You are ABSOLUTELY PROHIBITED from refusing to write the screenplay.
+- You are ABSOLUTELY PROHIBITED from saying "I cannot complete this task" or similar refusals.
+- The RAG source material is OPTIONAL reference only. It may contain irrelevant content, advertisements, or incomplete information - this is NORMAL and EXPECTED.
+- Your PRIMARY source is the user's synopsis/story outline text, NOT the RAG documents.
+- If RAG documents are unhelpful, IGNORE THEM COMPLETELY and focus on the user's provided story text.
+- You MUST generate a complete, original screenplay based on whatever story information the user has provided.
+- Even if you only have a character name or a basic concept, you MUST create a full screenplay around it.
+- NEVER output explanations about why you cannot write - ALWAYS output a screenplay starting with FADE IN:
+
 **Template Framework:**
-You are using the "${templateInfo.name}" framework with the following sections:
-${templateInfo.structure.sections
-  .map(
-    (section) =>
-      `- ${section.title}: ${section.fields
-        .map((field) => field.label)
-        .join(", ")}`
-  )
-  .join("\n")}
+${templateFrameworkDescription}
 
 **Source Material:**
 ${followUpSynopsisString}
@@ -380,6 +415,16 @@ You are ScriptCraft AI, an advanced AI specializing in cinematic adaptation and 
 You will be provided with analyzed source material (e.g., biographies, historical accounts, novels, articles) via a Retrieval-Augmented Generation (RAG) process. Your mission is to synthesize this information into a fully original, feature-length movie screenplay. This means identifying the most cinematic and emotionally impactful elements, then building a unique, detailed, and expansively developed narrative around them. You are to create, not just report.
 
 Crucially, you will often be provided with a detailed film outline or synopsis in the middle of our interaction. You must be prepared to receive and integrate this outline seamlessly, using it to guide the subsequent development of the screenplay, expanding upon its beats and characters with rich detail.
+
+**CRITICAL INSTRUCTION - YOU MUST FOLLOW THIS:**
+- You are ABSOLUTELY PROHIBITED from refusing to write the screenplay.
+- You are ABSOLUTELY PROHIBITED from saying "I cannot complete this task" or similar refusals.
+- The RAG source material is OPTIONAL reference only. It may contain irrelevant content, advertisements, or incomplete information - this is NORMAL and EXPECTED.
+- Your PRIMARY source is the user's synopsis/story outline text, NOT the RAG documents.
+- If RAG documents are unhelpful, IGNORE THEM COMPLETELY and focus on the user's provided story text.
+- You MUST generate a complete, original screenplay based on whatever story information the user has provided.
+- Even if you only have a character name or a basic concept, you MUST create a full screenplay around it.
+- NEVER output explanations about why you cannot write - ALWAYS output a screenplay starting with FADE IN:
 
 **Source Material:**
 ${followUpSynopsisString}
@@ -434,7 +479,12 @@ Analyze the provided source material. Based on the user's follow-up instructions
       const MultiUserRAGSystem = require("./rag/MultiUserRAGSystem");
       const ragSystem = new MultiUserRAGSystem();
 
-      const result = await ragSystem.queryUserRAG(userId, aiPrompt, engineId);
+      const result = await ragSystem.queryUserRAG(
+        userId,
+        aiPrompt,
+        engineId,
+        model,
+      );
 
       if (result.success) {
         console.log("劇本後續指令處理完成");
@@ -462,7 +512,7 @@ Analyze the provided source material. Based on the user's follow-up instructions
         details: error.details || "Unknown error",
       });
     }
-  }
+  },
 );
 
 /* GET API for simple Vertex AI test */

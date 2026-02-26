@@ -51,98 +51,130 @@ router.post("/askai", authenticateToken, async (req, res) => {
       try {
         console.log(`[DEBUG] Processing templateId: ${templateId}`);
 
-        // 獲取模板詳情以加強提示詞
-        const [templates] = await pool.execute(
-          "SELECT scriptname, template_structure FROM script_template WHERE id = ? AND userid = ?",
-          [templateId, userId]
-        );
+        // 特殊處理：如果是 fallback 模板，標記為使用默認結構（有模板模式）
+        if (templateId === "fallback") {
+          console.log(`[DEBUG] Using fallback template (有模板模式)`);
+          templateInfo = {
+            name: "Default Structure (Fallback)",
+            structure: { isFallback: true },
+          };
+        } else {
+          // 獲取模板詳情以加強提示詞（支持公共模板: userid = 'SYSTEM'）
+          const [templates] = await pool.execute(
+            "SELECT scriptname, template_structure FROM script_template WHERE id = ? AND (userid = ? OR userid = 'SYSTEM')",
+            [templateId, userId],
+          );
 
-        console.log(
-          `[DEBUG] Found ${templates.length} template(s) for templateId: ${templateId}`
-        );
+          console.log(
+            `[DEBUG] Found ${templates.length} template(s) for templateId: ${templateId}`,
+          );
 
-        if (templates.length > 0) {
-          try {
-            const rawTemplateStructure = templates[0].template_structure;
-            console.log(
-              `[DEBUG] Raw template_structure type:`,
-              typeof rawTemplateStructure
-            );
-
-            // 根據資料類型決定處理方式
-            let templateStructure;
-
-            if (
-              typeof rawTemplateStructure === "object" &&
-              rawTemplateStructure !== null
-            ) {
-              // 如果已經是物件，直接使用
-              console.log(`[DEBUG] Template structure is already an object`);
-              templateStructure = rawTemplateStructure;
-            } else if (typeof rawTemplateStructure === "string") {
+          if (templates.length > 0) {
+            try {
+              const rawTemplateStructure = templates[0].template_structure;
               console.log(
-                `[DEBUG] Raw template_structure preview:`,
-                rawTemplateStructure.substring(0, 100) + "..."
+                `[DEBUG] Raw template_structure type:`,
+                typeof rawTemplateStructure,
               );
 
-              // 檢查是否為 "[object Object]" 字串
-              if (rawTemplateStructure === "[object Object]") {
-                console.error(
-                  "[DEBUG] Invalid template structure: [object Object] detected"
+              // 根據資料類型決定處理方式
+              let templateStructure;
+
+              if (
+                typeof rawTemplateStructure === "object" &&
+                rawTemplateStructure !== null
+              ) {
+                // 如果已經是物件，直接使用
+                console.log(`[DEBUG] Template structure is already an object`);
+                templateStructure = rawTemplateStructure;
+              } else if (typeof rawTemplateStructure === "string") {
+                console.log(
+                  `[DEBUG] Raw template_structure preview:`,
+                  rawTemplateStructure.substring(0, 100) + "...",
                 );
-                console.error(
-                  "[DEBUG] This suggests the template was not properly JSON.stringify() when saved"
-                );
-                throw new Error("Invalid template structure");
+
+                // 檢查是否為 "[object Object]" 字串
+                if (rawTemplateStructure === "[object Object]") {
+                  console.error(
+                    "[DEBUG] Invalid template structure: [object Object] detected",
+                  );
+                  console.error(
+                    "[DEBUG] This suggests the template was not properly JSON.stringify() when saved",
+                  );
+                  throw new Error("Invalid template structure");
+                } else {
+                  // 嘗試解析 JSON 字串
+                  templateStructure = JSON.parse(rawTemplateStructure);
+                }
               } else {
-                // 嘗試解析 JSON 字串
-                templateStructure = JSON.parse(rawTemplateStructure);
+                throw new Error("Unknown template structure format");
               }
-            } else {
-              throw new Error("Unknown template structure format");
+
+              templateInfo = {
+                name: templates[0].scriptname,
+                structure: templateStructure,
+              };
+
+              // 更新模板的最後使用時間（只在成功找到模板後執行）
+              await pool.execute(
+                "UPDATE script_template SET updated_at = CURRENT_TIMESTAMP WHERE id = ? AND userid = ?",
+                [templateId, userId],
+              );
+
+              console.log(
+                `[DEBUG] Successfully loaded template: ${templateInfo.name}`,
+              );
+            } catch (jsonError) {
+              console.error(
+                "[DEBUG] Error parsing template_structure JSON:",
+                jsonError,
+              );
+              console.error(
+                "[DEBUG] Raw template_structure:",
+                templates[0].template_structure,
+              );
             }
-
-            templateInfo = {
-              name: templates[0].scriptname,
-              structure: templateStructure,
-            };
-
-            // 更新模板的最後使用時間（只在成功找到模板後執行）
-            await pool.execute(
-              "UPDATE script_template SET updated_at = CURRENT_TIMESTAMP WHERE id = ? AND userid = ?",
-              [templateId, userId]
-            );
-
-            console.log(
-              `[DEBUG] Successfully loaded template: ${templateInfo.name}`
-            );
-          } catch (jsonError) {
-            console.error(
-              "[DEBUG] Error parsing template_structure JSON:",
-              jsonError
-            );
-            console.error(
-              "[DEBUG] Raw template_structure:",
-              templates[0].template_structure
+          } else {
+            console.warn(
+              `[DEBUG] No template found for templateId: ${templateId}, userId: ${userId}`,
             );
           }
-        } else {
-          console.warn(
-            `[DEBUG] No template found for templateId: ${templateId}, userId: ${userId}`
-          );
         }
       } catch (error) {
         console.error("[DEBUG] Database error while handling template:", error);
         // 不影響主要功能，繼續執行
       }
     } else {
-      console.log(`[DEBUG] No templateId provided, using default prompt`);
+      console.log(
+        `[DEBUG] No templateId provided, using default prompt (無模板模式)`,
+      );
     }
 
     // 建構給 AI 的提示詞（根據是否有模板資訊來調整）
     let aiPrompt;
 
     if (templateInfo) {
+      // 構建模板框架描述
+      let templateFrameworkDescription;
+      if (templateInfo.structure.isFallback) {
+        // Fallback 模板使用簡化描述
+        templateFrameworkDescription = `You are using the "${templateInfo.name}" framework, which follows a classic three-act structure with sections for Setup, Confrontation, Climax, and Resolution.`;
+      } else if (templateInfo.structure.sections) {
+        // 自定義模板顯示詳細的 sections
+        templateFrameworkDescription = `You are using the "${templateInfo.name}" framework with the following sections:
+${templateInfo.structure.sections
+  .map(
+    (section) =>
+      `- ${section.title}: ${section.fields
+        .map((field) => field.label)
+        .join(", ")}`,
+  )
+  .join("\n")}`;
+      } else {
+        // 安全後備
+        templateFrameworkDescription = `You are using the "${templateInfo.name}" framework.`;
+      }
+
       // 使用模板資訊來增強提示詞
       aiPrompt = `**Your Role:**
 You are ScriptCraft AI, an advanced AI specializing in cinematic adaptation and original screenplay creation. Think of yourself not just as a writer, but as a filmmaker who understands narrative arcs, character psychology, visual language, and the art of dramatic tension. Your goal is to craft original, compelling screenplays that resonate with audiences.
@@ -150,16 +182,18 @@ You are ScriptCraft AI, an advanced AI specializing in cinematic adaptation and 
 **Your Core Mission:**
 You will be provided with analyzed source material via a Retrieval-Augmented Generation (RAG) process. Your mission is to synthesize this information into a fully original, feature-length movie screenplay. This means identifying the most cinematic and emotionally impactful elements, then building a unique narrative around them. You are to create, not just report.
 
+**CRITICAL INSTRUCTION - YOU MUST FOLLOW THIS:**
+- You are ABSOLUTELY PROHIBITED from refusing to write the screenplay.
+- You are ABSOLUTELY PROHIBITED from saying "I cannot complete this task" or similar refusals.
+- The RAG source material is OPTIONAL reference only. It may contain irrelevant content, advertisements, or incomplete information - this is NORMAL and EXPECTED.
+- Your PRIMARY source is the user's synopsis/story outline text, NOT the RAG documents.
+- If RAG documents are unhelpful, IGNORE THEM COMPLETELY and focus on the user's provided story text.
+- You MUST generate a complete, original screenplay based on whatever story information the user has provided.
+- Even if you only have a character name or a basic concept, you MUST create a full screenplay around it.
+- NEVER output explanations about why you cannot write - ALWAYS output a screenplay starting with FADE IN:
+
 **Template Framework:**
-You are using the "${templateInfo.name}" framework with the following sections:
-${templateInfo.structure.sections
-  .map(
-    (section) =>
-      `- ${section.title}: ${section.fields
-        .map((field) => field.label)
-        .join(", ")}`
-  )
-  .join("\n")}
+${templateFrameworkDescription}
 
 **Source Material:**
 ${synopsisString}
@@ -208,6 +242,16 @@ You are ScriptCraft AI, an advanced AI specializing in cinematic adaptation and 
 You will be provided with analyzed source material (e.g., biographies, historical accounts, novels, articles) via a Retrieval-Augmented Generation (RAG) process. Your mission is to synthesize this information into a fully original, feature-length movie screenplay. This means identifying the most cinematic and emotionally impactful elements, then building a unique, detailed, and expansively developed narrative around them. You are to create, not just report.
 
 Crucially, you will often be provided with a detailed film outline or synopsis in the middle of our interaction. You must be prepared to receive and integrate this outline seamlessly, using it to guide the subsequent development of the screenplay, expanding upon its beats and characters with rich detail.
+
+**CRITICAL INSTRUCTION - YOU MUST FOLLOW THIS:**
+- You are ABSOLUTELY PROHIBITED from refusing to write the screenplay.
+- You are ABSOLUTELY PROHIBITED from saying "I cannot complete this task" or similar refusals.
+- The RAG source material is OPTIONAL reference only. It may contain irrelevant content, advertisements, or incomplete information - this is NORMAL and EXPECTED.
+- Your PRIMARY source is the user's synopsis/story outline text, NOT the RAG documents.
+- If RAG documents are unhelpful, IGNORE THEM COMPLETELY and focus on the user's provided story text.
+- You MUST generate a complete, original screenplay based on whatever story information the user has provided.
+- Even if you only have a character name or a basic concept, you MUST create a full screenplay around it.
+- NEVER output explanations about why you cannot write - ALWAYS output a screenplay starting with FADE IN:
 
 **Source Material:**
 ${synopsisString}
@@ -263,7 +307,7 @@ Analyze the provided source material. Based on all the guidelines above, generat
       userId,
       aiPrompt,
       engineId,
-      model
+      model,
     );
 
     if (result.success) {

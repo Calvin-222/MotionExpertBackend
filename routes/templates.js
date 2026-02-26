@@ -135,19 +135,23 @@ router.post("/", authenticateToken, async (req, res) => {
       );
     }
 
-    const [result] = await pool.execute(
-      "INSERT INTO script_template (userid, scriptname, template_structure, is_default) VALUES (?, ?, ?, ?)",
-      [userid, scriptname, template_structure, is_default || false],
+    // 生成 UUID 作為模板 ID
+    const crypto = require("crypto");
+    const templateId = crypto.randomUUID();
+
+    await pool.execute(
+      "INSERT INTO script_template (id, userid, scriptname, template_structure, is_default) VALUES (?, ?, ?, ?, ?)",
+      [templateId, userid, scriptname, template_structure, is_default || false],
     );
 
     console.log(
-      `[DEBUG] Created new template with ID: ${result.insertId} for user: ${userid}`,
+      `[DEBUG] Created new template with ID: ${templateId} for user: ${userid}`,
     );
 
     res.json({
       success: true,
       message: "Template created successfully",
-      templateId: result.insertId,
+      templateId: templateId,
     });
   } catch (error) {
     console.error("Error creating template:", error);

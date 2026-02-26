@@ -41,7 +41,7 @@ class QueryOperations {
     question,
     ragId = null,
     getRAGEngineFromDB,
-    model = null
+    model = null,
   ) {
     try {
       const targetRagId = ragId;
@@ -56,7 +56,7 @@ class QueryOperations {
       // 從資料庫獲取 RAG Engine 信息
       const engineResult = await getRAGEngineFromDB(targetRagId);
       console.log(
-        engineResult.success ? "RAG Engine found" : "RAG Engine not found"
+        engineResult.success ? "RAG Engine found" : "RAG Engine not found",
       );
       if (!engineResult.success) {
         return {
@@ -70,8 +70,8 @@ class QueryOperations {
       console.log(
         `💬 User ${userId} querying RAG ${targetRagId}: ${question.substring(
           0,
-          50
-        )}...`
+          50,
+        )}...`,
       );
 
       const result = await this.querySpecificRAG(
@@ -79,7 +79,7 @@ class QueryOperations {
         question,
         userId,
         engineResult.ragEngine.ragname,
-        model
+        model,
       );
 
       if (result.success) {
@@ -155,12 +155,12 @@ class QueryOperations {
           if (contexts.length > 0) {
             // 🆕 如果有檢索到相關內容，使用生成式 AI 來產生答案
             console.log(
-              `🤖 Generating AI answer based on ${contexts.length} retrieved contexts...`
+              `🤖 Generating AI answer based on ${contexts.length} retrieved contexts...`,
             );
             const aiAnswer = await this.generateAnswerFromContexts(
               question,
               contexts,
-              model
+              model,
             );
 
             return {
@@ -184,17 +184,17 @@ class QueryOperations {
           lastError = error;
           console.error(
             `❌ Query attempt ${attempt} failed:`,
-            error.response?.data
+            error.response?.data,
           );
 
           // 如果是 "Invalid rag corpus ID" 錯誤，可能是 corpus 還沒完全準備好
           if (
             error.response?.data?.error?.message?.includes(
-              "Invalid rag corpus ID"
+              "Invalid rag corpus ID",
             )
           ) {
             console.log(
-              `⚠️ Corpus might not be ready yet, waiting before retry...`
+              `⚠️ Corpus might not be ready yet, waiting before retry...`,
             );
             if (attempt < 3) {
               await new Promise((resolve) => setTimeout(resolve, 30000)); // 等待 30 秒
@@ -271,11 +271,11 @@ class QueryOperations {
 
       if (contexts.length > 0) {
         console.log(
-          `🤖 Generating AI answer based on ${contexts.length} retrieved contexts...`
+          `🤖 Generating AI answer based on ${contexts.length} retrieved contexts...`,
         );
         const aiAnswer = await this.generateAnswerFromContexts(
           question,
-          contexts
+          contexts,
         );
 
         return {
@@ -313,12 +313,15 @@ class QueryOperations {
   async generateAnswerFromContexts(
     question,
     contexts,
-    model = "gemini-2.5-pro"
+    model = "gemini-2.5-pro",
   ) {
     try {
+      // 確保 model 有有效值（處理 null、undefined、空字串情況）
+      const effectiveModel = model || "gemini-2.5-pro";
+
       console.log(`🤖 Generating answer for question: "${question}"`);
       console.log(`📚 Using ${contexts.length} context(s)`);
-      console.log(`🤖 Using model: ${model}`);
+      console.log(`🤖 Using model: ${effectiveModel}`);
 
       // 構建上下文文本
       const contextTexts = contexts
@@ -345,7 +348,7 @@ ${contextTexts}
 
       // 使用 Google GenAI SDK 調用 Gemini 模型
       const request = {
-        model: model,
+        model: effectiveModel,
         contents: [
           {
             role: "user",
@@ -400,7 +403,7 @@ ${contextTexts}
       return {
         success: true,
         answer: generatedText,
-        model: model,
+        model: effectiveModel,
         contextUsed: contexts.length,
         rawResponse: result,
       };
