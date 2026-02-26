@@ -27,7 +27,7 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-// 1. 獲取用戶的所有模板
+// 1. 獲取用戶的所有模板（包含公共模板）
 router.get("/users/:userId", authenticateToken, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -40,13 +40,18 @@ router.get("/users/:userId", authenticateToken, async (req, res) => {
       });
     }
 
+    // 查詢用戶自己的模板 + 公共模板 (userid = 'SYSTEM')
     const [templates] = await pool.execute(
-      "SELECT * FROM script_template WHERE userid = ? ORDER BY is_default DESC, created_at DESC",
-      [userId]
+      `SELECT *, 
+        CASE WHEN userid = 'SYSTEM' THEN 1 ELSE 0 END as is_public
+       FROM script_template 
+       WHERE userid = ? OR userid = 'SYSTEM' 
+       ORDER BY is_public ASC, is_default DESC, created_at DESC`,
+      [userId],
     );
 
     console.log(
-      `[DEBUG] Found ${templates.length} templates for user ${userId}`
+      `[DEBUG] Found ${templates.length} templates for user ${userId} (including public templates)`,
     );
 
     res.json({
@@ -69,7 +74,7 @@ router.get("/:templateId", authenticateToken, async (req, res) => {
 
     const [templates] = await pool.execute(
       "SELECT * FROM script_template WHERE id = ?",
-      [templateId]
+      [templateId],
     );
 
     if (templates.length === 0) {
@@ -79,8 +84,9 @@ router.get("/:templateId", authenticateToken, async (req, res) => {
       });
     }
 
-    // 檢查權限
-    if (req.user.userId !== templates[0].userid) {
+    // 檢查權限：允許查看自己的模板或公共模板
+    const template = templates[0];
+    if (req.user.userId !== template.userid && template.userid !== "SYSTEM") {
       return res.status(403).json({
         success: false,
         message: "Access denied",
@@ -89,7 +95,7 @@ router.get("/:templateId", authenticateToken, async (req, res) => {
 
     res.json({
       success: true,
-      template: templates[0],
+      template: template,
     });
   } catch (error) {
     console.error("Error loading template:", error);
@@ -125,17 +131,17 @@ router.post("/", authenticateToken, async (req, res) => {
     if (is_default) {
       await pool.execute(
         "UPDATE script_template SET is_default = FALSE WHERE userid = ?",
-        [userid]
+        [userid],
       );
     }
 
     const [result] = await pool.execute(
       "INSERT INTO script_template (userid, scriptname, template_structure, is_default) VALUES (?, ?, ?, ?)",
-      [userid, scriptname, template_structure, is_default || false]
+      [userid, scriptname, template_structure, is_default || false],
     );
 
     console.log(
-      `[DEBUG] Created new template with ID: ${result.insertId} for user: ${userid}`
+      `[DEBUG] Created new template with ID: ${result.insertId} for user: ${userid}`,
     );
 
     res.json({
@@ -161,13 +167,21 @@ router.put("/:templateId", authenticateToken, async (req, res) => {
     // 先檢查模板是否存在且屬於當前用戶
     const [existingTemplates] = await pool.execute(
       "SELECT userid FROM script_template WHERE id = ?",
-      [templateId]
+      [templateId],
     );
 
     if (existingTemplates.length === 0) {
       return res.status(404).json({
         success: false,
         message: "Template not found",
+      });
+    }
+
+    // 防止修改公共模板
+    if (existingTemplates[0].userid === "SYSTEM") {
+      return res.status(403).json({
+        success: false,
+        message: "Cannot modify public templates",
       });
     }
 
@@ -190,13 +204,13 @@ router.put("/:templateId", authenticateToken, async (req, res) => {
     if (is_default) {
       await pool.execute(
         "UPDATE script_template SET is_default = FALSE WHERE userid = ? AND id != ?",
-        [req.user.userId, templateId]
+        [req.user.userId, templateId],
       );
     }
 
     await pool.execute(
       "UPDATE script_template SET scriptname = ?, template_structure = ?, is_default = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-      [scriptname, template_structure, is_default || false, templateId]
+      [scriptname, template_structure, is_default || false, templateId],
     );
 
     console.log(`[DEBUG] Updated template ID: ${templateId}`);
@@ -222,13 +236,21 @@ router.delete("/:templateId", authenticateToken, async (req, res) => {
     // 先檢查模板是否存在且屬於當前用戶
     const [existingTemplates] = await pool.execute(
       "SELECT userid FROM script_template WHERE id = ?",
-      [templateId]
+      [templateId],
     );
 
     if (existingTemplates.length === 0) {
       return res.status(404).json({
         success: false,
         message: "Template not found",
+      });
+    }
+
+    // 防止刪除公共模板
+    if (existingTemplates[0].userid === "SYSTEM") {
+      return res.status(403).json({
+        success: false,
+        message: "Cannot delete public templates",
       });
     }
 
@@ -266,7 +288,7 @@ router.post("/create-default", authenticateToken, async (req, res) => {
     // 檢查用戶是否已有模板
     const [existingTemplates] = await pool.execute(
       "SELECT id FROM script_template WHERE userid = ? LIMIT 1",
-      [userId]
+      [userId],
     );
 
     if (existingTemplates.length > 0) {
@@ -448,7 +470,7 @@ router.post("/create-default", authenticateToken, async (req, res) => {
         "Classic Three-Act Structure",
         JSON.stringify(defaultTemplateStructure),
         true,
-      ]
+      ],
     );
 
     console.log(`[DEBUG] Created default template for user: ${userId}`);
@@ -477,7 +499,7 @@ router.patch(
       // 先檢查模板是否存在且屬於當前用戶
       const [existingTemplates] = await pool.execute(
         "SELECT userid FROM script_template WHERE id = ?",
-        [templateId]
+        [templateId],
       );
 
       if (existingTemplates.length === 0) {
@@ -497,17 +519,17 @@ router.patch(
       // 先將所有模板設為非預設
       await pool.execute(
         "UPDATE script_template SET is_default = FALSE WHERE userid = ?",
-        [req.user.userId]
+        [req.user.userId],
       );
 
       // 將指定模板設為預設
       await pool.execute(
         "UPDATE script_template SET is_default = TRUE WHERE id = ?",
-        [templateId]
+        [templateId],
       );
 
       console.log(
-        `[DEBUG] Set template ${templateId} as default for user ${req.user.userId}`
+        `[DEBUG] Set template ${templateId} as default for user ${req.user.userId}`,
       );
 
       res.json({
@@ -521,7 +543,7 @@ router.patch(
         message: error.message,
       });
     }
-  }
+  },
 );
 
 module.exports = router;
