@@ -230,8 +230,11 @@ ${synopsisString}
   - Dialogue: Centered, natural-sounding, and revealing of character
   - Parentheticals: Used sparingly for subtle direction on delivery
 
+**CRITICAL LANGUAGE REQUIREMENT:**
+You MUST write the entire screenplay in Traditional Chinese (繁體中文). All dialogue, action lines, scene descriptions, and character names must be in Traditional Chinese. Only the formatting elements (FADE IN:, INT., EXT., FADE OUT., CUT TO:, etc.) should remain in English as per standard screenplay format.
+
 **Your Task:**
-Analyze the provided source material and template framework. Generate a complete, original movie screenplay starting with FADE IN:. Focus on establishing the tone, introducing key characters or the central world, and hinting at the core conflict. Your output should be substantial and detailed; aim for a comprehensive and rich narrative rather than a brief summary.`;
+Analyze the provided source material and template framework. Generate a complete, original movie screenplay in Traditional Chinese (繁體中文), starting with FADE IN:. Focus on establishing the tone, introducing key characters or the central world, and hinting at the core conflict. Your output should be substantial and detailed; aim for a comprehensive and rich narrative rather than a brief summary.`;
     } else {
       aiPrompt = `**Your Role:**
 
@@ -297,9 +300,12 @@ ${synopsisString}
   - **Parentheticals:** Used sparingly for subtle direction on delivery or action directly tied to dialogue (e.g., (whispering), (slamming door)). Ensure they enhance, not dictate, the performance.
 * **Narrative Depth and Completeness:** Ensure the screenplay has a clear beginning, rising action, multiple layers of conflict, a compelling climax, well-defined falling action, and a satisfying resolution. The protagonist's journey should be evident and complete, demonstrating significant character development. Aim for a screenplay that feels like a fully realized film, not just a series of connected scenes.
 
+**CRITICAL LANGUAGE REQUIREMENT:**
+You MUST write the entire screenplay in Traditional Chinese (繁體中文). All dialogue, action lines, scene descriptions, and character names must be in Traditional Chinese. Only the formatting elements (FADE IN:, INT., EXT., FADE OUT., CUT TO:, etc.) should remain in English as per standard screenplay format.
+
 **Your First Task:**
 
-Analyze the provided source material. Based on all the guidelines above, generate a detailed and expansive opening sequence (at least 3-5 pages) of a new, original movie screenplay, starting with FADE IN:. Focus on establishing a strong and distinct tone, introducing key characters or the central world with depth and intrigue, and hinting at the core conflicts and the underlying emotional landscape that will drive the narrative. The opening should immediately engage the audience and suggest the richness of the story to come. Remember, the goal is a comprehensive and lengthy screenplay, so be generous with detail in scenes, actions, and character development from the very beginning.`;
+Analyze the provided source material. Based on all the guidelines above, generate a detailed and expansive opening sequence (at least 3-5 pages) of a new, original movie screenplay in Traditional Chinese (繁體中文), starting with FADE IN:. Focus on establishing a strong and distinct tone, introducing key characters or the central world with depth and intrigue, and hinting at the core conflicts and the underlying emotional landscape that will drive the narrative. The opening should immediately engage the audience and suggest the richness of the story to come. Remember, the goal is a comprehensive and lengthy screenplay, so be generous with detail in scenes, actions, and character development from the very beginning.`;
     }
 
     // 用包裝後的 prompt 送給 RAG query function

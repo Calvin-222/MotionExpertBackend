@@ -319,23 +319,69 @@ class QueryOperations {
       // 確保 model 有有效值（處理 null、undefined、空字串情況）
       const effectiveModel = model || "gemini-2.5-pro";
 
-      console.log(`🤖 Generating answer for question: "${question}"`);
+      // 🎬 檢測是否是劇本生成模式（ScriptCraft AI）
+      const isScreenplayMode =
+        question.includes("ScriptCraft AI") ||
+        question.includes("FADE IN:") ||
+        question.includes("feature-length movie screenplay") ||
+        question.includes("Professional Screenplay Format");
+
+      console.log(
+        `🤖 Mode: ${isScreenplayMode ? "🎬 Screenplay Generation" : "📚 RAG Q&A"}`,
+      );
       console.log(`📚 Using ${contexts.length} context(s)`);
       console.log(`🤖 Using model: ${effectiveModel}`);
 
       // 構建上下文文本
       const contextTexts = contexts
         .map((ctx, index) => {
-          return `文檔片段 ${index + 1}:\n${
-            ctx.text || ctx.chunk?.text || "無內容"
+          return `Reference Document ${index + 1}:\n${
+            ctx.text || ctx.chunk?.text || "No content"
           }`;
         })
         .join("\n\n");
 
-      console.log(`📝 Context texts:`, contextTexts.substring(0, 500) + "...");
+      console.log(
+        `📝 Context texts preview:`,
+        contextTexts.substring(0, 300) + "...",
+      );
 
-      // 構建提示詞
-      const prompt = `基於以下文檔內容回答問題。請只使用提供的文檔內容來回答，如果文檔中沒有相關信息，請明確說明。
+      // 根據模式構建不同的提示詞和溫度設定
+      let prompt;
+      let temperature;
+
+      if (isScreenplayMode) {
+        // 🎬 劇本生成模式：將用戶的完整 ScriptCraft AI prompt 作為主要指令
+        // RAG contexts 只作為可選的補充參考資料
+        console.log(
+          `🎬 Screenplay mode: Using user prompt as PRIMARY instruction`,
+        );
+
+        prompt = `${question}
+
+---
+ADDITIONAL REFERENCE MATERIALS (OPTIONAL - USE ONLY IF HELPFUL):
+The following documents were retrieved from the RAG system as potential reference materials. 
+Use them ONLY if they contain relevant story content, character details, or plot elements.
+If they contain irrelevant content (advertisements, book tables of contents, unrelated text), IGNORE them completely and focus ONLY on the story elements provided in the prompt above.
+
+${contextTexts}
+---
+
+CRITICAL LANGUAGE REQUIREMENT: You MUST write the entire screenplay in Traditional Chinese (繁體中文).
+All dialogue, action lines, scene descriptions, and character names must be in Traditional Chinese.
+Only the formatting elements (FADE IN:, INT., EXT., etc.) should remain in English as per standard screenplay format.
+
+FINAL REMINDER: Your ONLY task is to generate a complete, professional screenplay in Traditional Chinese (繁體中文). 
+Start immediately with FADE IN: and continue until FADE OUT.
+Do NOT explain, refuse, or discuss - WRITE THE SCREENPLAY NOW.`;
+
+        temperature = 0.5; // 穩定的創意寫作溫度
+      } else {
+        // 📚 一般 RAG 問答模式
+        console.log(`📚 RAG Q&A mode: Standard document-based answering`);
+
+        prompt = `基於以下文檔內容回答問題。請只使用提供的文檔內容來回答，如果文檔中沒有相關信息，請明確說明。
 
 文檔內容:
 ${contextTexts}
@@ -344,6 +390,10 @@ ${contextTexts}
 
 請用繁體中文回答，並基於文檔內容提供具體和有用的答案:`;
 
+        temperature = 0.2; // 問答需要更精確的回答
+      }
+
+      console.log(`🌡️ Temperature: ${temperature}`);
       console.log(`🚀 Calling Google GenAI SDK with Gemini model...`);
 
       // 使用 Google GenAI SDK 調用 Gemini 模型
@@ -360,7 +410,7 @@ ${contextTexts}
           },
         ],
         config: {
-          temperature: 0.2,
+          temperature: temperature, // 動態設定：劇本 0.7, 問答 0.2
           topK: 32,
           topP: 1,
           maxOutputTokens: 65536,

@@ -402,8 +402,11 @@ ${followUpSynopsisString}
   - Dialogue: Centered, natural-sounding, and revealing of character
   - Parentheticals: Used sparingly for subtle direction on delivery
 
+**CRITICAL LANGUAGE REQUIREMENT:**
+You MUST write the entire screenplay in Traditional Chinese (繁體中文). All dialogue, action lines, scene descriptions, and character names must be in Traditional Chinese. Only the formatting elements (FADE IN:, INT., EXT., FADE OUT., CUT TO:, etc.) should remain in English as per standard screenplay format.
+
 **Your Task:**
-Analyze the provided source material and template framework. Based on the user's follow-up instructions, generate the requested screenplay modifications or additions. Focus on addressing their specific concerns while maintaining the tone, character consistency, and narrative quality. Your output should be substantial and detailed; aim for comprehensive screenplay content that seamlessly integrates with the existing work.`;
+Analyze the provided source material and template framework. Based on the user's follow-up instructions, generate the requested screenplay modifications or additions in Traditional Chinese (繁體中文). Focus on addressing their specific concerns while maintaining the tone, character consistency, and narrative quality. Your output should be substantial and detailed; aim for comprehensive screenplay content that seamlessly integrates with the existing work.`;
       } else {
         // 使用預設的完整提示詞（從 MSWwithFIile.js 複製）
         aiPrompt = `**Your Role:**
@@ -470,9 +473,12 @@ ${followUpSynopsisString}
   - **Parentheticals:** Used sparingly for subtle direction on delivery or action directly tied to dialogue (e.g., (whispering), (slamming door)). Ensure they enhance, not dictate, the performance.
 * **Narrative Depth and Completeness:** Ensure the screenplay has a clear beginning, rising action, multiple layers of conflict, a compelling climax, well-defined falling action, and a satisfying resolution. The protagonist's journey should be evident and complete, demonstrating significant character development. Aim for a screenplay that feels like a fully realized film, not just a series of connected scenes.
 
+**CRITICAL LANGUAGE REQUIREMENT:**
+You MUST write the entire screenplay in Traditional Chinese (繁體中文). All dialogue, action lines, scene descriptions, and character names must be in Traditional Chinese. Only the formatting elements (FADE IN:, INT., EXT., FADE OUT., CUT TO:, etc.) should remain in English as per standard screenplay format.
+
 **Your Task:**
 
-Analyze the provided source material. Based on the user's follow-up instructions, generate the requested screenplay modifications, expansions, or refinements. Focus on addressing their specific concerns while maintaining professional screenplay formatting and narrative consistency. Remember, the goal is comprehensive screenplay content that seamlessly integrates with existing work and enhances the overall narrative quality.`;
+Analyze the provided source material. Based on the user's follow-up instructions, generate the requested screenplay modifications, expansions, or refinements in Traditional Chinese (繁體中文). Focus on addressing their specific concerns while maintaining professional screenplay formatting and narrative consistency. Remember, the goal is comprehensive screenplay content that seamlessly integrates with existing work and enhances the overall narrative quality.`;
       }
 
       // 使用 RAG 系統處理後續指令
